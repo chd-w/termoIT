@@ -61,7 +61,7 @@ const App: React.FC = () => {
   // Carregar logo da pasta public
   useEffect(() => {
     const loadLogo = async () => {
-      const baseUrl = import.meta.env.PROD ? '/termroIT/' : './';
+      const baseUrl = import.meta.env.PROD ? '/termoIT/' : './';
       try {
         const response = await fetch(`${baseUrl}logo.jpg`);
         if (response.ok) {
