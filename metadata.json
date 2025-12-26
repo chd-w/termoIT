@@ -1,5 +1,0 @@
-{
-  "name": "Gerador Termo de Devolução",
-  "description": "Aplicação para gerar termos de devolução em imagem, utilizando dados de um Excel.",
-  "requestFramePermissions": []
-}
