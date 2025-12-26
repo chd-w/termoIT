@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   Database, XCircle, Loader2, Download, Upload, Search, ChevronRight, Mail, FileText
 } from 'lucide-react';
 import FileUploader from './components/FileUploader';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
-import { UserFormData, TelecomData, PostoTrabalhoData } from './types';
+import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
 import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
-
-// 1. IMPORTAÇÃO DIRETA DA LOGO (O Vite resolve o caminho automaticamente)
+// @ts-ignore
 import logoImg from './assets/logo.jpg';
 
 const saveAs = (FileSaverLib as any).default?.saveAs || (FileSaverLib as any).saveAs || (FileSaverLib as any).default || FileSaverLib;
@@ -43,10 +42,11 @@ const App: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<'TR' | 'TD'>('TR');
   
-  // 2. ESTADO DE LOGO SIMPLIFICADO (Não precisamos mais de Base64 se usarmos import)
   const [telecomData, setTelecomData] = useState<TelecomData[]>([]);
+  const [repStockData, setRepStockData] = useState<REPStockData[]>([]);
   const [postoTrabalhoData, setPostoTrabalhoData] = useState<PostoTrabalhoData[]>([]);
   const [selectedTelecom, setSelectedTelecom] = useState<TelecomData[]>([]);
+  const [selectedRepStock, setSelectedRepStock] = useState<REPStockData[]>([]);
   const [selectedPosto, setSelectedPosto] = useState<PostoTrabalhoData[]>([]);
   
   const [formData, setFormData] = useState<UserFormData>({
@@ -61,23 +61,32 @@ const App: React.FC = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isCapturingImage, setIsCapturingImage] = useState(false);
 
-  // 3. REMOVIDO O useEffect DO FETCH (Menos código, menos erro)
-
   const handleExcelUpload = async (file: File) => {
     setExcelFile(file);
     try {
       const result = await parseExcelFileMultiSheet(file);
+      console.log('📊 Dados carregados:');
+      console.log('- Telecom:', result.telecom.length, 'registros');
+      console.log('- REP e Stock:', result.repStock.length, 'registros');
+      console.log('- Posto Trabalho:', result.postoTrabalho.length, 'registros');
+      
       setTelecomData(result.telecom);
+      setRepStockData(result.repStock);
       setPostoTrabalhoData(result.postoTrabalho);
+      
+      if (result.repStock.length === 0) {
+        console.warn('⚠️ ATENÇÃO: Nenhum dado foi carregado da aba "Tabela REP e Stock"');
+      }
     } catch (error) {
+      console.error('Erro ao processar ficheiro:', error);
       alert("Erro ao processar ficheiro.");
     }
   };
 
-  const toggleSelection = (row: any, type: 'telecom' | 'posto') => {
+  const toggleSelection = (row: any, type: 'telecom' | 'repstock' | 'posto') => {
     const itemKey = JSON.stringify(row);
-    const setter = type === 'telecom' ? setSelectedTelecom : setSelectedPosto;
-    const currentList = type === 'telecom' ? selectedTelecom : selectedPosto;
+    const setter = type === 'telecom' ? setSelectedTelecom : type === 'repstock' ? setSelectedRepStock : setSelectedPosto;
+    const currentList = type === 'telecom' ? selectedTelecom : type === 'repstock' ? selectedRepStock : selectedPosto;
     const isSelected = currentList.some(it => JSON.stringify(it) === itemKey);
 
     if (!isSelected) {
@@ -96,7 +105,6 @@ const App: React.FC = () => {
     if (!el) return;
     setIsCapturingImage(true);
     try {
-      // Adicionado allowTaint e useCORS para garantir que a imagem carregue no canvas
       const canvas = await html2canvas(el, { 
         scale: 3, 
         useCORS: true, 
@@ -122,12 +130,50 @@ const App: React.FC = () => {
       ? 'TERMO DE RESPONSABILIDADE PELO USO DE EQUIPAMENTO INFORMÁTICO'
       : 'TERMO DE DEVOLUÇÃO DE EQUIPAMENTO INFORMÁTICO';
 
+    // Colunas que não devem aparecer no documento final
+    const excludedColumns = [
+      'Origem_Tabela', 
+      'Origem Tabela',
+      'origem_tabela',
+      'Utilizador_Chave',
+      'Utilizador Chave',
+      'utilizador_chave',
+      'Utilizadores',
+      'utilizadores'
+    ];
+
+    // Função para filtrar colunas indesejadas
+    const filterColumns = (obj: any): any => {
+      const filtered: any = {};
+      Object.keys(obj).forEach(key => {
+        const normalizedKey = key.toLowerCase().replace(/[_\s]/g, '');
+        const shouldExclude = excludedColumns.some(excluded => 
+          excluded.toLowerCase().replace(/[_\s]/g, '') === normalizedKey
+        );
+        if (!shouldExclude) {
+          filtered[key] = obj[key];
+        }
+      });
+      return filtered;
+    };
+
+    // Filtrar dados antes de exibir
+    const filteredTelecomForDoc = selectedTelecom.map(filterColumns);
+    const filteredRepStockForDoc = selectedRepStock.map(filterColumns);
+    const filteredPostoForDoc = selectedPosto.map(filterColumns);
+
     return (
       <div id="document-print-area" className="bg-white text-black p-[15mm] mx-auto relative text-justify shadow-inner" style={{ width: '210mm', minHeight: '297mm', fontFamily: 'Arial, sans-serif' }}>
         
-        {/* 4. LOGO USANDO O IMPORT DIRETO */}
+        {/* LOGO USANDO O IMPORT DIRETO */}
         <div className="absolute top-[15mm] right-[15mm] w-40 h-20 flex justify-end items-start">
-          <img src={logoImg} alt="Logo" className="max-w-full max-h-full object-contain" />
+          <img 
+            src={logoImg}
+            alt="Logo"
+            className="max-w-full max-h-full object-contain"
+            onLoad={() => console.log("Logo carregada com sucesso")}
+            crossOrigin="anonymous" 
+          />
         </div>
 
         {/* TITULO */}
@@ -166,105 +212,215 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <p className="font-bold text-[10px] mb-2 uppercase">{isTR ? 'Registo de Entrega:' : 'Registo de Devolução:'}</p>
-
-        {[
-          { title: "TELECOMUNICAÇÕES", data: selectedTelecom },
-          { title: "POSTO DE TRABALHO", data: selectedPosto }
-        ].map((sec, idx) => sec.data.length > 0 && (
-          <div key={idx} className="mb-4">
-            <div className="bg-gray-100 border-l-4 border-black p-1 text-[9px] font-bold uppercase mb-1">{sec.title}</div>
-            <table className="w-full border-collapse border border-gray-300 text-[9px]">
-              <thead>
-                <tr className="bg-gray-50 uppercase">
-                  {Object.keys(sec.data[0]).map(k => <th key={k} className="border border-gray-300 p-1 text-left">{k}</th>)}
+        {/* TABELAS DE EQUIPAMENTOS */}
+        {filteredTelecomForDoc.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-[10px] font-bold mb-1 uppercase">Equipamentos Telecom</h3>
+            <table className="w-full text-[9px] border border-black">
+              <thead className="bg-gray-200">
+                <tr>
+                  {Object.keys(filteredTelecomForDoc[0]).map(k => (
+                    <th key={k} className="border border-black p-1 text-left font-bold">{k}</th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {sec.data.map((row, ri) => (
-                  <tr key={ri}>
-                    {Object.values(row).map((v, ci) => <td key={ci} className="border border-gray-300 p-1">{formatExcelValue(v)}</td>)}
+                {filteredTelecomForDoc.map((row, idx) => (
+                  <tr key={idx}>
+                    {Object.keys(row).map(k => (
+                      <td key={k} className="border border-black p-1">{formatExcelValue(row[k as keyof typeof row])}</td>
+                    ))}
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        ))}
+        )}
 
-        <div className="mt-28 grid grid-cols-2 gap-20 text-[10px] text-center">
-          <div>
-            <div className="border-t border-black mb-1"></div>
-            <p>Colaborador</p>
-            <p className="font-bold uppercase">{formData.nomeColaborador}</p>
+        {filteredRepStockForDoc.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-[10px] font-bold mb-1 uppercase">Equipamentos</h3>
+            <table className="w-full text-[9px] border border-black">
+              <thead className="bg-gray-200">
+                <tr>
+                  {Object.keys(filteredRepStockForDoc[0]).map(k => (
+                    <th key={k} className="border border-black p-1 text-left font-bold">{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRepStockForDoc.map((row, idx) => (
+                  <tr key={idx}>
+                    {Object.keys(row).map(k => (
+                      <td key={k} className="border border-black p-1">{formatExcelValue(row[k as keyof typeof row])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-          <div>
-            <div className="border-t border-black mb-1"></div>
-            <p>Payroll</p>
-            <p className="font-bold uppercase">Amorim Luxury Group</p>
+        )}
+
+        {filteredPostoForDoc.length > 0 && (
+          <div className="mb-6">
+            <h3 className="text-[10px] font-bold mb-1 uppercase">Posto de Trabalho</h3>
+            <table className="w-full text-[9px] border border-black">
+              <thead className="bg-gray-200">
+                <tr>
+                  {Object.keys(filteredPostoForDoc[0]).map(k => (
+                    <th key={k} className="border border-black p-1 text-left font-bold">{k}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPostoForDoc.map((row, idx) => (
+                  <tr key={idx}>
+                    {Object.keys(row).map(k => (
+                      <td key={k} className="border border-black p-1">{formatExcelValue(row[k as keyof typeof row])}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
+        )}
+
+        <div className="text-[10px] leading-relaxed space-y-4 mb-12">
+          <p>O colaborador está ciente de que a utilização indevida dos equipamentos, incluindo o acesso a conteúdos ilegais ou impróprios, pode resultar em medidas disciplinares.</p>
+          <p>Obriga-me, ainda, a devolver os equipamentos imediatamente quando solicitado pela empresa ou quando cessar o vínculo laboral, sob pena de responsabilidade civil.</p>
         </div>
-      </div>
+
+       <div className="mt-28 grid grid-cols-2 gap-20 text-[10px] text-center">
+         <div>
+           <div className="border-t border-black mb-1"></div>
+           <p>Colaborador</p>
+           <p className="font-bold uppercase">{formData.nomeColaborador}</p>
+         </div>
+         <div>
+           <div className="border-t border-black mb-1"></div>
+           <p>Payroll</p>
+           <p className="font-bold uppercase">Amorim Luxury Group</p>
+         </div>
+       </div>
+     </div>
     );
   };
 
+  const normalizeForSearch = (text: string): string => {
+    return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+  };
+
+  const filterData = <T extends Record<string, any>>(data: T[]): T[] => {
+    if (!searchTerm) return data;
+    const normalized = normalizeForSearch(searchTerm);
+    return data.filter(row =>
+      Object.values(row).some(val => normalizeForSearch(String(val || '')).includes(normalized))
+    );
+  };
+
+  const filteredTelecom = filterData(telecomData);
+  const filteredRepStock = filterData(repStockData);
+  const filteredPosto = filterData(postoTrabalhoData);
+
   return (
-    <div className="min-h-screen bg-zinc-950 text-white p-6">
-      <header className="max-w-7xl mx-auto flex justify-between items-center mb-8 border-b border-zinc-800 pb-6">
-        <h1 className="text-xl font-black uppercase flex items-center gap-2">
-          <Database className="text-indigo-400" /> TermoIT
-        </h1>
-        <div className="flex bg-zinc-900 p-1 rounded-lg">
-          <button onClick={() => setActiveTab('upload')} className={`px-4 py-2 rounded-md text-[10px] font-bold uppercase ${activeTab === 'upload' ? 'bg-indigo-600' : 'text-zinc-500'}`}>
-            1. Seleção
-          </button>
-          <button onClick={() => setActiveTab('form')} className={`px-4 py-2 rounded-md text-[10px] font-bold uppercase ${activeTab === 'form' ? 'bg-indigo-600' : 'text-zinc-500'}`}>
-            2. Formulário
-          </button>
+    <div className="min-h-screen bg-gradient-to-br from-black via-zinc-900 to-zinc-800 text-white">
+      <header className="border-b border-zinc-800 bg-black/20 backdrop-blur-md px-6 py-5">
+        <div className="flex items-center justify-between max-w-7xl mx-auto">
+          <div className="flex items-center gap-3">
+            <Database size={24} className="text-indigo-500"/>
+            <h1 className="text-base font-bold uppercase tracking-widest">termoIT</h1>
+          </div>
+          
+          <nav className="flex gap-2">
+            <button 
+              onClick={() => setActiveTab('upload')} 
+              className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'upload' ? 'bg-indigo-600' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+            >
+              <Upload size={14} className="inline mr-2"/>Upload
+            </button>
+            <button 
+              onClick={() => setActiveTab('form')} 
+              className={`px-6 py-2 rounded-xl text-[10px] font-bold uppercase transition-all ${activeTab === 'form' ? 'bg-indigo-600' : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'}`}
+              disabled={!excelFile}
+            >
+              <FileText size={14} className="inline mr-2"/>Termo
+            </button>
+          </nav>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto">
+      <main className="max-w-7xl mx-auto px-6 py-8">
         {activeTab === 'upload' ? (
-          <div className="space-y-6">
-            {!excelFile ? (
-              <div className="bg-zinc-900 p-16 rounded-3xl border border-zinc-800 text-center">
-                <Upload className="mx-auto mb-4 text-zinc-700" size={48} />
-                <FileUploader onFileSelect={handleExcelUpload} acceptedTypes=".xlsx,.xls" />
-              </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="relative">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" />
-                  <input 
-                    type="text" 
-                    placeholder="Pesquisar..." 
-                    className="w-full bg-zinc-900 border border-zinc-800 rounded-xl pl-12 py-4" 
-                    value={searchTerm} 
-                    onChange={e => setSearchTerm(e.target.value)} 
-                  />
+          <div className="max-w-4xl mx-auto">
+            <FileUploader onFileUpload={handleExcelUpload} />
+            
+            {excelFile && (
+              <div className="mt-8 space-y-6">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold uppercase">Dados do Excel</h2>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
+                    <input 
+                      className="bg-zinc-800 border border-zinc-700 pl-10 pr-4 py-3 rounded-xl text-sm w-80"
+                      placeholder="Pesquisar por nome..."
+                      value={searchTerm}
+                      onChange={e => setSearchTerm(e.target.value)}
+                    />
+                  </div>
                 </div>
-                
-                {[
-                  {id:'telecom', title:'Telecom', data:telecomData}, 
-                  {id:'posto', title:'Posto Trabalho', data:postoTrabalhoData}
-                ].map(sec => sec.data.length > 0 && (
-                  <div key={sec.id} className="bg-zinc-900 rounded-xl border border-zinc-800 overflow-hidden mb-4">
-                    <div className="p-3 bg-zinc-800 font-bold text-[10px] uppercase text-indigo-400">{sec.title}</div>
-                    <div className="overflow-x-auto max-h-64">
-                      <table className="w-full text-[10px] text-left">
-                        <tbody className="divide-y divide-zinc-800/50">
-                          {sec.data.filter(row => JSON.stringify(row).toLowerCase().includes(searchTerm.toLowerCase())).map((row, i) => {
-                            const isChecked = (sec.id === 'telecom' ? selectedTelecom : selectedPosto).some(it => JSON.stringify(it) === JSON.stringify(row));
+
+                {/* INDICADORES DE DADOS CARREGADOS */}
+                <div className="flex gap-3 text-xs">
+                  <div className={`px-3 py-2 rounded-lg ${telecomData.length > 0 ? 'bg-indigo-500/20 text-indigo-300' : 'bg-red-500/20 text-red-300'}`}>
+                    Telecom: {telecomData.length} registros
+                  </div>
+                  <div className={`px-3 py-2 rounded-lg ${repStockData.length > 0 ? 'bg-green-500/20 text-green-300' : 'bg-red-500/20 text-red-300'}`}>
+                    REP e Stock: {repStockData.length} registros
+                  </div>
+                  <div className={`px-3 py-2 rounded-lg ${postoTrabalhoData.length > 0 ? 'bg-amber-500/20 text-amber-300' : 'bg-red-500/20 text-red-300'}`}>
+                    Posto Trabalho: {postoTrabalhoData.length} registros
+                  </div>
+                </div>
+
+                {searchTerm && (
+                  <div className="text-sm text-zinc-400">
+                    Resultados da pesquisa "{searchTerm}": 
+                    <span className="ml-2 text-indigo-400">{filteredTelecom.length} Telecom</span>
+                    <span className="ml-2 text-green-400">{filteredRepStock.length} REP/Stock</span>
+                    <span className="ml-2 text-amber-400">{filteredPosto.length} Posto</span>
+                  </div>
+                )}
+
+                {/* TABELA TELECOM */}
+                {filteredTelecom.length > 0 && (
+                  <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
+                    <h3 className="text-[10px] font-bold text-indigo-400 uppercase mb-4">Tabela Telecom ({filteredTelecom.length} registros)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px]">
+                        <thead className="bg-zinc-800/50 text-zinc-400">
+                          <tr>
+                            <th className="p-2 text-left">Selecionar</th>
+                            {filteredTelecom[0] && Object.keys(filteredTelecom[0]).map(k => (
+                              <th key={k} className="p-2 text-left uppercase font-bold">{k}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredTelecom.map((row, idx) => {
+                            const isSelected = selectedTelecom.some(it => JSON.stringify(it) === JSON.stringify(row));
                             return (
-                              <tr 
-                                key={i} 
-                                className={`hover:bg-indigo-500/10 cursor-pointer ${isChecked ? 'bg-indigo-500/20' : ''}`} 
-                                onClick={() => toggleSelection(row, sec.id as any)}
-                              >
-                                <td className="p-3 w-8">
-                                  <input type="checkbox" checked={isChecked} readOnly className="rounded border-zinc-700 bg-zinc-800 text-indigo-600" />
+                              <tr key={idx} className={`border-b border-zinc-800 ${isSelected ? 'bg-indigo-900/30' : 'hover:bg-zinc-800/30'}`}>
+                                <td className="p-2">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isSelected}
+                                    onChange={() => toggleSelection(row, 'telecom')}
+                                    className="w-4 h-4"
+                                  />
                                 </td>
-                                {Object.values(row).map((v, j) => <td key={j} className="p-3 text-zinc-400">{formatExcelValue(v)}</td>)}
+                                {Object.keys(row).map(k => (
+                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                ))}
                               </tr>
                             );
                           })}
@@ -272,11 +428,89 @@ const App: React.FC = () => {
                       </table>
                     </div>
                   </div>
-                ))}
-                
+                )}
+
+                {/* TABELA REP E STOCK */}
+                {filteredRepStock.length > 0 && (
+                  <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
+                    <h3 className="text-[10px] font-bold text-green-400 uppercase mb-4">Tabela REP e Stock ({filteredRepStock.length} registros)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px]">
+                        <thead className="bg-zinc-800/50 text-zinc-400">
+                          <tr>
+                            <th className="p-2 text-left">Selecionar</th>
+                            {filteredRepStock[0] && Object.keys(filteredRepStock[0]).map(k => (
+                              <th key={k} className="p-2 text-left uppercase font-bold">{k}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredRepStock.map((row, idx) => {
+                            const isSelected = selectedRepStock.some(it => JSON.stringify(it) === JSON.stringify(row));
+                            return (
+                              <tr key={idx} className={`border-b border-zinc-800 ${isSelected ? 'bg-green-900/30' : 'hover:bg-zinc-800/30'}`}>
+                                <td className="p-2">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isSelected}
+                                    onChange={() => toggleSelection(row, 'repstock')}
+                                    className="w-4 h-4"
+                                  />
+                                </td>
+                                {Object.keys(row).map(k => (
+                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* TABELA POSTO TRABALHO */}
+                {filteredPosto.length > 0 && (
+                  <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
+                    <h3 className="text-[10px] font-bold text-amber-400 uppercase mb-4">Tabela Posto Trabalho ({filteredPosto.length} registros)</h3>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-[10px]">
+                        <thead className="bg-zinc-800/50 text-zinc-400">
+                          <tr>
+                            <th className="p-2 text-left">Selecionar</th>
+                            {filteredPosto[0] && Object.keys(filteredPosto[0]).map(k => (
+                              <th key={k} className="p-2 text-left uppercase font-bold">{k}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredPosto.map((row, idx) => {
+                            const isSelected = selectedPosto.some(it => JSON.stringify(it) === JSON.stringify(row));
+                            return (
+                              <tr key={idx} className={`border-b border-zinc-800 ${isSelected ? 'bg-amber-900/30' : 'hover:bg-zinc-800/30'}`}>
+                                <td className="p-2">
+                                  <input 
+                                    type="checkbox" 
+                                    checked={isSelected}
+                                    onChange={() => toggleSelection(row, 'posto')}
+                                    className="w-4 h-4"
+                                  />
+                                </td>
+                                {Object.keys(row).map(k => (
+                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                ))}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
                 <button 
                   onClick={() => setActiveTab('form')} 
-                  className="fixed bottom-10 right-10 bg-indigo-600 px-8 py-4 rounded-xl font-bold uppercase text-xs flex items-center gap-2"
+                  className="w-full bg-indigo-600 py-4 rounded-xl font-bold uppercase text-xs flex items-center justify-center gap-2"
                 >
                   Avançar <ChevronRight size={18}/>
                 </button>
@@ -379,6 +613,7 @@ const App: React.FC = () => {
               <div className="space-y-3 max-h-[500px] overflow-y-auto pr-2">
                 {[ 
                   {id:'telecom', data:selectedTelecom}, 
+                  {id:'repstock', data:selectedRepStock},
                   {id:'posto', data:selectedPosto} 
                 ].map(sec => sec.data.map((item, idx) => (
                   <div key={`${sec.id}-${idx}`} className="bg-zinc-800/50 border border-zinc-800 rounded-xl p-4">
@@ -390,7 +625,7 @@ const App: React.FC = () => {
                           className="bg-transparent text-[11px] w-full border-b border-zinc-800" 
                           value={formatExcelValue(item[k as keyof typeof item])} 
                           onChange={e => {
-                            const setter = sec.id === 'telecom' ? setSelectedTelecom : setSelectedPosto;
+                            const setter = sec.id === 'telecom' ? setSelectedTelecom : sec.id === 'repstock' ? setSelectedRepStock : setSelectedPosto;
                             setter(prev => prev.map((it, i) => i === idx ? {...it, [k]: e.target.value} : it));
                           }} 
                         />

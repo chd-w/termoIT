@@ -1,13 +1,6 @@
 import * as XLSX from 'xlsx';
 import { ExcelParseResult, TelecomData, REPStockData, PostoTrabalhoData } from '../types';
 
-// Nomes CORRETOS das abas
-const SHEET_NAMES = {
-  TELECOM: 'Tabela Telecom',
-  REP_STOCK: 'Tabela REP e Stock',
-  POSTO_TRABALHO: 'Tabela Posto Trabalho'
-};
-
 /**
  * Normaliza texto para busca (remove acentos, converte para minúsculas)
  */
@@ -35,7 +28,7 @@ export const parseExcelFileMultiSheet = (file: File): Promise<ExcelParseResult> 
         
         // Verificar se as abas necessárias existem
         const availableSheets = workbook.SheetNames;
-        console.log('Abas disponíveis:', availableSheets);
+        console.log('📋 Abas disponíveis no Excel:', availableSheets);
         
         const result: ExcelParseResult = {
           telecom: [],
@@ -43,50 +36,128 @@ export const parseExcelFileMultiSheet = (file: File): Promise<ExcelParseResult> 
           postoTrabalho: []
         };
 
-        // Ler aba "Tabela Telecom"
-        if (availableSheets.includes(SHEET_NAMES.TELECOM)) {
-          const telecomSheet = workbook.Sheets[SHEET_NAMES.TELECOM];
-          result.telecom = XLSX.utils.sheet_to_json<TelecomData>(telecomSheet, { 
+        // Função para encontrar aba com nome similar (case-insensitive e sem acentos)
+        const findSheet = (possibleNames: string[]): string | null => {
+          for (const name of possibleNames) {
+            const found = availableSheets.find(sheet => 
+              normalizeText(sheet) === normalizeText(name)
+            );
+            if (found) {
+              console.log(`✅ Encontrada aba "${found}" correspondente a "${name}"`);
+              return found;
+            }
+          }
+          return null;
+        };
+
+        // Ler aba "Tabela Telecom" (com variações de nome)
+        const telecomSheetName = findSheet([
+          'Tabela Telecom', 
+          'Telecom', 
+          'Tab Telecom',
+          'Tabela_Telecom'
+        ]);
+        if (telecomSheetName) {
+          const telecomSheet = workbook.Sheets[telecomSheetName];
+          const telecomDataRaw = XLSX.utils.sheet_to_json<TelecomData>(telecomSheet, { 
             defval: '', 
             raw: false 
           });
-          console.log(`Tabela Telecom: ${result.telecom.length} registros`);
+          
+          // Filtrar linhas vazias
+          result.telecom = telecomDataRaw.filter(row => {
+            const values = Object.values(row);
+            return values.some(v => v !== null && v !== undefined && String(v).trim() !== '');
+          });
+          
+          console.log(`📊 Tabela Telecom: ${result.telecom.length} registros carregados (de ${telecomDataRaw.length} linhas totais)`);
         } else {
-          console.warn(`Aba "${SHEET_NAMES.TELECOM}" não encontrada`);
+          console.warn(`⚠️ Aba "Tabela Telecom" não encontrada`);
         }
 
-        // Ler aba "Tabela REP e Stock"
-        if (availableSheets.includes(SHEET_NAMES.REP_STOCK)) {
-          const repStockSheet = workbook.Sheets[SHEET_NAMES.REP_STOCK];
-          result.repStock = XLSX.utils.sheet_to_json<REPStockData>(repStockSheet, { 
+        // Ler aba "Tabela REP e Stock" (com variações de nome)
+        const repStockSheetName = findSheet([
+          'Tabela REP e Stock', 
+          'REP e Stock', 
+          'REP Stock',
+          'Tabela REP Stock',
+          'Tab REP e Stock',
+          'Tabela_REP_e_Stock',
+          'REP_e_Stock'
+        ]);
+        if (repStockSheetName) {
+          const repStockSheet = workbook.Sheets[repStockSheetName];
+          
+          // Tentar ler a tabela nomeada primeiro
+          let repStockDataRaw: any[] = [];
+          
+          // Verificar se há uma tabela nomeada "REP_STOCK_COMBINADOS"
+          if (workbook.Workbook?.Names) {
+            const tableName = workbook.Workbook.Names.find((n: any) => 
+              n.Name === 'REP_STOCK_COMBINADOS' || 
+              normalizeText(n.Name).includes('rep') && normalizeText(n.Name).includes('stock')
+            );
+            if (tableName) {
+              console.log(`📊 Encontrada tabela nomeada: ${tableName.Name}`);
+            }
+          }
+          
+          // Ler todos os dados da aba
+          repStockDataRaw = XLSX.utils.sheet_to_json<REPStockData>(repStockSheet, { 
             defval: '', 
             raw: false 
           });
-          console.log(`Tabela REP e Stock: ${result.repStock.length} registros`);
+          
+          // Filtrar linhas vazias
+          result.repStock = repStockDataRaw.filter(row => {
+            const values = Object.values(row);
+            return values.some(v => v !== null && v !== undefined && String(v).trim() !== '');
+          });
+          
+          console.log(`📊 Tabela REP e Stock: ${result.repStock.length} registros carregados (de ${repStockDataRaw.length} linhas totais)`);
         } else {
-          console.warn(`Aba "${SHEET_NAMES.REP_STOCK}" não encontrada`);
+          console.warn(`⚠️ Aba "Tabela REP e Stock" não encontrada. Abas disponíveis:`, availableSheets);
         }
 
-        // Ler aba "Tabela Posto Trabalho"
-        if (availableSheets.includes(SHEET_NAMES.POSTO_TRABALHO)) {
-          const postoTrabalhoSheet = workbook.Sheets[SHEET_NAMES.POSTO_TRABALHO];
-          result.postoTrabalho = XLSX.utils.sheet_to_json<PostoTrabalhoData>(postoTrabalhoSheet, { 
+        // Ler aba "Tabela Posto Trabalho" (com variações de nome)
+        const postoTrabalhoSheetName = findSheet([
+          'Tabela Posto Trabalho',
+          'Posto Trabalho',
+          'Posto de Trabalho',
+          'Tab Posto Trabalho',
+          'Tabela_Posto_Trabalho',
+          'Posto_Trabalho'
+        ]);
+        if (postoTrabalhoSheetName) {
+          const postoTrabalhoSheet = workbook.Sheets[postoTrabalhoSheetName];
+          const postoTrabalhoDataRaw = XLSX.utils.sheet_to_json<PostoTrabalhoData>(postoTrabalhoSheet, { 
             defval: '', 
             raw: false 
           });
-          console.log(`Tabela Posto Trabalho: ${result.postoTrabalho.length} registros`);
+          
+          // Filtrar linhas vazias
+          result.postoTrabalho = postoTrabalhoDataRaw.filter(row => {
+            const values = Object.values(row);
+            return values.some(v => v !== null && v !== undefined && String(v).trim() !== '');
+          });
+          
+          console.log(`📊 Tabela Posto Trabalho: ${result.postoTrabalho.length} registros carregados (de ${postoTrabalhoDataRaw.length} linhas totais)`);
         } else {
-          console.warn(`Aba "${SHEET_NAMES.POSTO_TRABALHO}" não encontrada`);
+          console.warn(`⚠️ Aba "Tabela Posto Trabalho" não encontrada`);
         }
 
         // Verificar se pelo menos uma aba foi lida
         if (result.telecom.length === 0 && result.repStock.length === 0 && result.postoTrabalho.length === 0) {
-          reject(new Error('Nenhuma das abas necessárias foi encontrada no arquivo Excel'));
+          const errorMsg = `Nenhuma das abas necessárias foi encontrada. Abas disponíveis: ${availableSheets.join(', ')}`;
+          console.error('❌', errorMsg);
+          reject(new Error(errorMsg));
           return;
         }
 
+        console.log('✅ Excel processado com sucesso!');
         resolve(result);
       } catch (error) {
+        console.error('❌ Erro ao processar Excel:', error);
         reject(error);
       }
     };
