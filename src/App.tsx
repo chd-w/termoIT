@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
-  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn
+  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check
 } from 'lucide-react';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
 import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
@@ -9,6 +9,7 @@ import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
 import { getAccessToken, searchUserByUtilizador } from './services/msGraphService';
+import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
 
@@ -100,12 +101,19 @@ const App: React.FC = () => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [isCapturingImage, setIsCapturingImage] = useState(false);
   const [isFetchingAzureUser, setIsFetchingAzureUser] = useState(false);
-  const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [isResumingSso, setIsResumingSso] = useState(false);
 
   const technicianName = selectedTechnician === 'Outro' ? customTechnician : selectedTechnician;
 
-  const [fileHandle, setFileHandle] = useState<FileSystemFileHandle | null>(null);
+  const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
+  const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    const activeAccount = instance.getActiveAccount();
+    if (!activeAccount && accounts.length > 0) {
+      instance.setActiveAccount(accounts[0]);
+    }
+  }, [accounts, instance]);
 
   const tryResumeSsoSession = async (): Promise<boolean> => {
     const existingAccount = instance.getActiveAccount() ?? accounts[0];
@@ -144,20 +152,15 @@ const App: React.FC = () => {
       if (account) return account;
     }
 
-    setIsAuthenticating(true);
-    try {
-      const loginResult = await instance.loginPopup({
-        ...loginRequest,
-        prompt: 'select_account',
-      });
-      account = loginResult.account ?? undefined;
-      if (account) {
-        instance.setActiveAccount(account);
-      }
-      return account;
-    } finally {
-      setIsAuthenticating(false);
+    const loginResult = await instance.loginPopup({
+      ...loginRequest,
+      prompt: 'select_account',
+    });
+    account = loginResult.account ?? undefined;
+    if (account) {
+      instance.setActiveAccount(account);
     }
+    return account;
   };
 
   const loadAzureUserData = async (utilizador: string) => {
@@ -193,34 +196,23 @@ const App: React.FC = () => {
     setCustomTechnician('');
   };
 
-  const handleReloadFile = async () => {
-    if (!fileHandle) return;
-    try {
-      const file = await fileHandle.getFile();
-      await handleExcelUpload(file);
-      resetSelections();
-    } catch (e) {
-      alert('Não foi possível recarregar o ficheiro. Tente novamente.');
-    }
+  const handleOpenWithFilePicker = () => {
+    setIsOneDrivePickerOpen(true);
   };
 
-  const handleOpenWithFilePicker = async () => {
-    if (!('showOpenFilePicker' in window)) {
-      alert('O seu browser não suporta esta funcionalidade. Use o botão de upload normal.');
-      return;
-    }
+  const handleOneDriveFilePicked = async (buffer: ArrayBuffer, name: string, itemId: string) => {
     try {
-      const [handle] = await (window as any).showOpenFilePicker({
-        types: [{ description: 'Excel', accept: { 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx', '.xls'] } }],
-        multiple: false
+      const file = new File([buffer], name, {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
-      setFileHandle(handle);
-      const file = await handle.getFile();
+      setPickedDriveItemId(itemId);
       setExcelFile(file);
       await handleExcelUpload(file);
       resetSelections();
-    } catch (e) {
-      // user cancelled
+      setIsOneDrivePickerOpen(false);
+    } catch (error) {
+      console.error('Erro ao carregar ficheiro do OneDrive:', error);
+      alert('Não foi possível carregar o ficheiro do OneDrive.');
     }
   };
 
@@ -229,7 +221,7 @@ const App: React.FC = () => {
     if (file) {
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         setExcelFile(file); 
-        setFileHandle(null); 
+        setPickedDriveItemId(undefined);
         handleExcelUpload(file); 
         resetSelections();
       } else {
@@ -302,6 +294,12 @@ const App: React.FC = () => {
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleClosePreview = () => {
+    setPreviewOpen(false);
+    // Prepara um novo termo no mesmo ficheiro já carregado.
+    resetSelections();
   };
 
   const DocumentVisual = () => {
@@ -580,13 +578,13 @@ const App: React.FC = () => {
                 OneDrive
               </button>
 
-              {(fileHandle || excelFile) && (
+              {excelFile && (
                 <div className="flex items-center gap-3 ml-auto">
-                  <div className="text-xs text-zinc-400 max-w-[200px] truncate" title={excelFile?.name || fileHandle?.name}>
-                    {excelFile?.name || fileHandle?.name}
+                  <div className="text-xs text-zinc-400 max-w-[200px] truncate" title={excelFile?.name}>
+                    {excelFile?.name}
                   </div>
                   <button
-                    onClick={fileHandle ? handleReloadFile : () => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
+                    onClick={() => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
                     title="Recarregar Ficheiro"
                   >
@@ -767,24 +765,6 @@ const App: React.FC = () => {
           <div className="grid md:grid-cols-5 gap-8">
             <div className="md:col-span-3 bg-zinc-900 p-8 rounded-3xl border border-zinc-800">
               <h2 className="text-lg font-bold mb-6 uppercase">Dados do Colaborador</h2>
-              {!accounts[0] && (
-                <div className="mb-4 p-4 rounded-xl border border-blue-500/30 bg-blue-500/10 flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-xs font-bold uppercase text-blue-300">Login Microsoft 365 necessário</p>
-                    <p className="text-[11px] text-zinc-300">
-                      Entre com a conta corporativa para pesquisar pessoas na organização.
-                    </p>
-                  </div>
-                  <button
-                    onClick={() => { void ensureMicrosoft365Login(); }}
-                    disabled={isAuthenticating}
-                    className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-xs font-bold uppercase disabled:opacity-60 flex items-center gap-2"
-                  >
-                    {isAuthenticating ? <Loader2 size={14} className="animate-spin" /> : <LogIn size={14} />}
-                    Entrar 365
-                  </button>
-                </div>
-              )}
               {isFetchingAzureUser && (
                 <div className="mb-4 text-[10px] text-blue-300 uppercase tracking-wider">
                   A consultar Azure para preencher dados do utilizador...
@@ -938,7 +918,7 @@ const App: React.FC = () => {
               <span className="text-[10px] font-bold uppercase text-zinc-500">
                 {TEMPLATE_OPTIONS.find(t => t.value === selectedTemplate)?.label}
               </span>
-              <button onClick={() => setPreviewOpen(false)}>
+              <button onClick={handleClosePreview}>
                 <XCircle size={28} className="text-zinc-500 hover:text-red-500" />
               </button>
             </div>
@@ -965,6 +945,14 @@ const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {isOneDrivePickerOpen && (
+        <OneDrivePicker
+          onFilePicked={handleOneDriveFilePicked}
+          onClose={() => setIsOneDrivePickerOpen(false)}
+          pickedItemId={pickedDriveItemId}
+        />
       )}
     </div>
   );

@@ -71,7 +71,8 @@ export const searchUserByUtilizador = async (
   token: string,
   utilizador: string
 ): Promise<AzureUserProfile | null> => {
-  const sanitized = escapeODataValue(utilizador.trim());
+  const originalValue = utilizador.trim();
+  const sanitized = escapeODataValue(originalValue);
   if (!sanitized) return null;
 
   const url = new URL('https://graph.microsoft.com/v1.0/users');
@@ -79,7 +80,7 @@ export const searchUserByUtilizador = async (
   url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
   url.searchParams.set(
     '$filter',
-    `startsWith(userPrincipalName,'${sanitized}') or startsWith(mailNickname,'${sanitized}') or startsWith(displayName,'${sanitized}')`
+    `userPrincipalName eq '${sanitized}' or mailNickname eq '${sanitized}' or mail eq '${sanitized}' or displayName eq '${sanitized}'`
   );
   url.searchParams.set('$count', 'true');
 
@@ -95,7 +96,34 @@ export const searchUserByUtilizador = async (
   }
 
   const data = await res.json();
-  const user = data?.value?.[0];
+  let user = data?.value?.[0];
+
+  // Fallback para nomes de utilizador sem domínio (ex.: "maria.silva").
+  if (!user && !originalValue.includes('@')) {
+    const fallbackUrl = new URL('https://graph.microsoft.com/v1.0/users');
+    fallbackUrl.searchParams.set('$top', '1');
+    fallbackUrl.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+    fallbackUrl.searchParams.set(
+      '$filter',
+      `startswith(userPrincipalName,'${sanitized}@') or startswith(mail,'${sanitized}@')`
+    );
+    fallbackUrl.searchParams.set('$count', 'true');
+
+    const fallbackRes = await fetch(fallbackUrl.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ConsistencyLevel: 'eventual',
+      },
+    });
+
+    if (!fallbackRes.ok) {
+      throw new Error(`Falha ao consultar utilizador no Graph (${fallbackRes.status})`);
+    }
+
+    const fallbackData = await fallbackRes.json();
+    user = fallbackData?.value?.[0];
+  }
+
   if (!user) return null;
 
   return {
