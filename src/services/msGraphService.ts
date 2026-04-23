@@ -137,3 +137,38 @@ export const searchUserByUtilizador = async (
     jobTitle: user.jobTitle,
   };
 };
+
+/**
+ * Pesquisa utilizadores no Azure AD por displayName (para autocomplete).
+ * Requer: User.ReadBasic.All ou User.Read.All
+ */
+export const searchUsersByDisplayName = async (
+  token: string,
+  query: string
+): Promise<AzureUserProfile[]> => {
+  const sanitized = escapeODataValue(query.trim());
+  if (!sanitized || sanitized.length < 2) return [];
+
+  const url = new URL('https://graph.microsoft.com/v1.0/users');
+  url.searchParams.set('$top', '8');
+  url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+  url.searchParams.set('$filter', `startswith(displayName,'${sanitized}')`);
+  url.searchParams.set('$count', 'true');
+  url.searchParams.set('$orderby', 'displayName');
+
+  const res = await fetch(url.toString(), {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ConsistencyLevel: 'eventual',
+    },
+  });
+
+  if (!res.ok) return [];
+  const data = await res.json();
+  return (data?.value ?? []).map((u: any) => ({
+    displayName: u.displayName,
+    mail: u.mail,
+    userPrincipalName: u.userPrincipalName,
+    jobTitle: u.jobTitle,
+  }));
+};

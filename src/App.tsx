@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName } from './services/msGraphService';
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
@@ -107,6 +107,12 @@ const App: React.FC = () => {
 
   const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
+
+  // Estado do autocomplete de nome de colaborador
+  const [userSearchResults, setUserSearchResults] = useState<{displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string}[]>([]);
+  const [userSearchLoading, setUserSearchLoading] = useState(false);
+  const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const userSearchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Sincronizar conta ativa
   useEffect(() => {
@@ -217,7 +223,42 @@ const App: React.FC = () => {
     setFormData({ nomeColaborador: '', dataInicio: '', dataEntrega: new Date().toISOString().split('T')[0], empresa: 'AFC', email: '', funcao: '' });
     setSelectedTechnician('');
     setCustomTechnician('');
+    setUserSearchResults([]);
+    setShowUserDropdown(false);
   };
+
+  const handleUserNameSearch = (query: string) => {
+    setFormData(prev => ({ ...prev, nomeColaborador: query }));
+    setShowUserDropdown(true);
+    if (userSearchTimeout.current) clearTimeout(userSearchTimeout.current);
+    if (query.length < 2) { setUserSearchResults([]); return; }
+    userSearchTimeout.current = setTimeout(async () => {
+      const account = instance.getActiveAccount() ?? accounts[0];
+      if (!account) return;
+      setUserSearchLoading(true);
+      try {
+        const token = await getAccessToken(instance, account);
+        const results = await searchUsersByDisplayName(token, query);
+        setUserSearchResults(results);
+      } catch {
+        setUserSearchResults([]);
+      } finally {
+        setUserSearchLoading(false);
+      }
+    }, 350);
+  };
+
+  const handleSelectUserFromDropdown = (user: { displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string }) => {
+    setFormData(prev => ({
+      ...prev,
+      nomeColaborador: user.displayName ? toTitleCase(user.displayName) : prev.nomeColaborador,
+      email: user.mail || user.userPrincipalName || prev.email,
+      funcao: user.jobTitle || prev.funcao,
+    }));
+    setShowUserDropdown(false);
+    setUserSearchResults([]);
+  };
+
 
   const handleOpenWithFilePicker = () => {
     setIsOneDrivePickerOpen(true);
@@ -835,11 +876,35 @@ const App: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="col-span-2">
                   <label className="text-[9px] font-bold text-zinc-500 uppercase">Nome</label>
-                  <input 
-                    className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl mt-1" 
-                    value={formData.nomeColaborador} 
-                    onChange={e => setFormData({...formData, nomeColaborador: e.target.value})} 
-                  />
+                  <div className="relative mt-1">
+                    <input
+                      className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl pr-8"
+                      value={formData.nomeColaborador}
+                      onChange={e => handleUserNameSearch(e.target.value)}
+                      onFocus={() => formData.nomeColaborador.length >= 2 && setShowUserDropdown(true)}
+                      onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
+                      placeholder="Pesquisar por nome no Azure AD..."
+                      autoComplete="off"
+                    />
+                    {userSearchLoading && (
+                      <Loader2 size={14} className="absolute right-3 top-1/2 -translate-y-1/2 animate-spin text-zinc-400" />
+                    )}
+                    {showUserDropdown && userSearchResults.length > 0 && (
+                      <div className="absolute z-50 top-full left-0 right-0 mt-1 bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden">
+                        {userSearchResults.map((u, i) => (
+                          <button
+                            key={i}
+                            type="button"
+                            onMouseDown={() => handleSelectUserFromDropdown(u)}
+                            className="w-full text-left px-4 py-2.5 hover:bg-zinc-700 transition-colors border-b border-zinc-700/50 last:border-0"
+                          >
+                            <div className="text-sm font-medium">{u.displayName}</div>
+                            <div className="text-[10px] text-zinc-400">{u.mail || u.userPrincipalName}{u.jobTitle ? ` · ${u.jobTitle}` : ''}</div>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 
                 <div>
