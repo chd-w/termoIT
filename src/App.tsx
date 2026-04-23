@@ -274,17 +274,30 @@ const App: React.FC = () => {
     setScriptMessage(null);
     try {
       const token = await getAccessToken(instance, account);
-      await runOfficeScriptByName(token, pickedDriveItemId, 'PostoTrabalho');
+      // ID direto do script Office: ms-officescript://onedrive_business_itemlink/01FHZCF7QLR7VRNZZJWRAZKB7NB6LSAXNB
+      const SCRIPT_ID = '01FHZCF7QLR7VRNZZJWRAZKB7NB6LSAXNB';
+      const runRes = await fetch(
+        `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/application/scripts/${SCRIPT_ID}/run`,
+        {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({}),
+        }
+      );
+      if (!runRes.ok) {
+        // Fallback: pesquisar por nome
+        await runOfficeScriptByName(token, pickedDriveItemId, 'PostoTrabalho');
+      }
       setScriptMessage({ type: 'success', text: 'Script PostoTrabalho executado com sucesso!' });
-      // Recarrega o ficheiro para refletir altera\u00e7\u00f5es
       if (excelFile) { await handleExcelUpload(excelFile); resetSelections(); }
     } catch (err: any) {
       setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
     } finally {
       setIsRunningScript(false);
-      setTimeout(() => setScriptMessage(null), 6000);
+      setTimeout(() => setScriptMessage(null), 8000);
     }
   };
+
 
   const handleOpenWithFilePicker = () => {
     setIsOneDrivePickerOpen(true);
@@ -698,19 +711,6 @@ const App: React.FC = () => {
                   <div className="text-xs text-zinc-400 max-w-[200px] truncate" title={excelFile?.name}>
                     {excelFile?.name}
                   </div>
-                  {/* Bot\u00e3o executar script - apenas quando o ficheiro \u00e9 do OneDrive */}
-                  {pickedDriveItemId && (
-                    <button
-                      onClick={handleRunPostoTrabalhoScript}
-                      disabled={isRunningScript}
-                      className="w-12 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-600 flex items-center justify-center transition-colors border border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Executar script PostoTrabalho no Excel Online"
-                    >
-                      {isRunningScript
-                        ? <Loader2 size={18} className="animate-spin" />
-                        : <Play size={18} />}
-                    </button>
-                  )}
                   <button
                     onClick={() => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
@@ -721,14 +721,29 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
-            {/* Mensagem de resultado do script */}
-            {scriptMessage && (
-              <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
-                scriptMessage.type === 'success'
-                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
-              }`}>
-                {scriptMessage.text}
+
+            {/* Bot\u00e3o de script PostoTrabalho - linha separada, vis\u00edvel ap\u00f3s selecionar ficheiro do OneDrive */}
+            {pickedDriveItemId && (
+              <div className="mt-3">
+                <button
+                  onClick={handleRunPostoTrabalhoScript}
+                  disabled={isRunningScript}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-xs font-bold uppercase transition-colors border border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Executar script PostoTrabalho no Excel Online"
+                >
+                  {isRunningScript
+                    ? <><Loader2 size={14} className="animate-spin" /> A executar script...</>
+                    : <><Play size={14} /> PostoTrabalho</>}
+                </button>
+                {scriptMessage && (
+                  <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
+                    scriptMessage.type === 'success'
+                      ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                      : 'bg-red-500/10 border border-red-500/30 text-red-400'
+                  }`}>
+                    {scriptMessage.text}
+                  </div>
+                )}
               </div>
             )}
             
