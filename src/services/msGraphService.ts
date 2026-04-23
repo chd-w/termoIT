@@ -140,34 +140,75 @@ export const searchUserByUtilizador = async (
 
 /**
  * Pesquisa utilizadores no Azure AD por displayName (para autocomplete).
- * Usa /me/people que requer apenas People.Read (sem admin consent).
+ * Tenta /users?$search (requer User.ReadBasic.All com admin consent).
+ * Fallback para /me/people (People.Read, sem admin consent) se 403.
  */
 export const searchUsersByDisplayName = async (
   token: string,
   query: string
 ): Promise<AzureUserProfile[]> => {
-  if (!query || query.trim().length < 2) return [];
+  const trimmed = query.trim();
+  if (!trimmed || trimmed.length < 2) return [];
 
-  // /me/people pesquisa colegas, contactos e pessoas com quem o utilizador interage
-  const url = new URL('https://graph.microsoft.com/v1.0/me/people');
-  url.searchParams.set('$top', '8');
-  url.searchParams.set('$select', 'displayName,scoredEmailAddresses,jobTitle,userPrincipalName');
-  url.searchParams.set('$search', query.trim());
+  // Tentativa 1: pesquisa completa no diretório (requer admin consent)
+  try {
+    const url = new URL('https://graph.microsoft.com/v1.0/users');
+    url.searchParams.set('$top', '10');
+    url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+    url.searchParams.set('$search', `"displayName:${trimmed}"`);
+    url.searchParams.set('$orderby', 'displayName');
 
-  const res = await fetch(url.toString(), {
-    headers: { Authorization: `Bearer ${token}` },
-  });
+    const res = await fetch(url.toString(), {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ConsistencyLevel: 'eventual',
+      },
+    });
 
-  if (!res.ok) {
-    console.warn('[searchUsersByDisplayName] /me/people falhou:', res.status, await res.text());
-    return [];
+    if (res.ok) {
+      const data = await res.json();
+      const results = (data?.value ?? []).map((u: any) => ({
+        displayName: u.displayName,
+        mail: u.mail,
+        userPrincipalName: u.userPrincipalName,
+        jobTitle: u.jobTitle,
+      }));
+      if (results.length > 0) return results;
+    } else {
+      console.warn('[search] /users retornou', res.status, '— a usar /me/people como fallback');
+    }
+  } catch {
+    // continua para fallback
   }
 
-  const data = await res.json();
-  return (data?.value ?? []).map((u: any) => ({
-    displayName: u.displayName,
-    mail: u.scoredEmailAddresses?.[0]?.address ?? u.userPrincipalName,
-    userPrincipalName: u.userPrincipalName,
-    jobTitle: u.jobTitle,
-  }));
+  // Fallback: /me/people (sem admin consent, mas resultados limitados a contactos)
+  try {
+    const url2 = new URL('https://graph.microsoft.com/v1.0/me/people');
+    url2.searchParams.set('$top', '10');
+    url2.searchParams.set('$select', 'displayName,scoredEmailAddresses,jobTitle,userPrincipalName');
+    url2.searchParams.set('$search', trimmed);
+
+    const res2 = await fetch(url2.toString(), {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (res2.ok) {
+      const data2 = await res2.json();
+      // Filtrar manualmente pelo nome para corresponder ao que foi escrito
+      return (data2?.value ?? [])
+        .filter((u: any) =>
+          u.displayName?.toLowerCase().includes(trimmed.toLowerCase())
+        )
+        .map((u: any) => ({
+          displayName: u.displayName,
+          mail: u.scoredEmailAddresses?.[0]?.address ?? u.userPrincipalName,
+          userPrincipalName: u.userPrincipalName,
+          jobTitle: u.jobTitle,
+        }));
+    }
+  } catch {
+    // sem resultados
+  }
+
+  return [];
 };
