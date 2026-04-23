@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useMsal } from '@azure/msal-react';
 import { Folder, FileSpreadsheet, ChevronRight, RefreshCw, X, Home, Loader2, LogIn } from 'lucide-react';
 import { getAccessToken, listDriveItems, downloadDriveItem, DriveItem } from '../services/msGraphService';
-import { appRedirectUri, loginRequest } from '../config/msalConfig';
+import { popupRedirectUri, loginRequest } from '../config/msalConfig';
 
 interface OneDrivePickerProps {
   onFilePicked: (buffer: ArrayBuffer, name: string, itemId: string) => void;
@@ -56,27 +56,38 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
       const data = await listDriveItems(token, folderId);
       setItems(data);
     } catch (e: any) {
-      setError('Erro ao carregar ficheiros. Verifica as permissões.');
+      setError(`Erro ao carregar ficheiros: ${e?.message ?? 'Verifica as permissões.'}`);
     } finally {
       setLoading(false);
     }
   }, [instance, account]);
 
+  // Recarrega quando muda de pasta OU quando o utilizador acaba de fazer login
+  // (sem este dep em `account`, a lista nunca aparecia após o popup de login)
   useEffect(() => {
-    loadItems(currentFolderId);
-  }, [currentFolderId]);
+    if (account) {
+      loadItems(currentFolderId);
+    }
+  }, [currentFolderId, account, loadItems]);
 
   const handleLogin = async () => {
+    setError('');
     try {
+      // Usa uma página blank.html dedicada como redirectUri do popup.
+      // Isto evita que a SPA completa (com toda a inicialização MSAL) seja
+      // carregada dentro do popup, o que causava o botão ficar sem resposta.
       const loginResult = await instance.loginPopup({
         ...loginRequest,
-        redirectUri: appRedirectUri,
+        redirectUri: popupRedirectUri,
+        prompt: 'select_account',
       });
       if (loginResult.account) {
         instance.setActiveAccount(loginResult.account);
       }
-    } catch (e) {
-      setError('Login cancelado ou falhou.');
+    } catch (e: any) {
+      if (e?.errorCode !== 'user_cancelled') {
+        setError(`Falha no login: ${e?.message ?? e?.errorCode ?? 'erro desconhecido'}`);
+      }
     }
   };
 
