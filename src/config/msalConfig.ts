@@ -16,7 +16,7 @@ export const msalConfig: Configuration = {
 };
 
 export const loginRequest: PopupRequest = {
-  scopes: ['User.Read', 'Files.Read', 'People.Read', 'User.ReadBasic.All'],
+  scopes: ['User.Read', 'Files.Read', 'People.Read', 'User.Read.All'],
   redirectUri: appRedirectUri,
 };
 
