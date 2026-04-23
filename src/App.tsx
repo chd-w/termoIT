@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut, Play
+  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut
 } from 'lucide-react';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
 import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
