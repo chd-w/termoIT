@@ -883,7 +883,12 @@ const App: React.FC = () => {
                       className="w-full bg-zinc-800 border border-zinc-700 p-3 rounded-xl pr-8"
                       value={formData.nomeColaborador}
                       onChange={e => handleUserNameSearch(e.target.value)}
-                      onFocus={() => formData.nomeColaborador.length >= 2 && setShowUserDropdown(true)}
+                      onFocus={() => {
+                        // Ao focar com conteúdo pré-preenchido, pesquisa imediatamente
+                        if (formData.nomeColaborador.length >= 2) {
+                          handleUserNameSearch(formData.nomeColaborador);
+                        }
+                      }}
                       onBlur={() => setTimeout(() => setShowUserDropdown(false), 200)}
                       placeholder="Pesquisar por nome no Azure AD..."
                       autoComplete="off"
