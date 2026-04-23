@@ -268,7 +268,7 @@ export const runOfficeScriptByName = async (
 
   // 2. Executar o script encontrado
   const runRes = await fetch(
-    `https://graph.microsoft.com/beta/me/drive/items/${itemId}/workbook/application/scripts/${match.id}/run`,
+    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/scripts/${match.id}/run`,
     {
       method: 'POST',
       headers: {
