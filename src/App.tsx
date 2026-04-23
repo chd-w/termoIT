@@ -176,45 +176,46 @@ const App: React.FC = () => {
   };
 
   const loadAzureUserData = async (utilizador: string) => {
-    if (!utilizador) {
-      console.log('[loadAzureUserData] utilizador vazio, a ignorar');
-      return;
-    }
-    console.log('[loadAzureUserData] a procurar:', utilizador);
+    if (!utilizador) return;
     setIsFetchingAzureUser(true);
+    let foundUser = false;
+
     try {
       const account = await ensureMicrosoft365Login();
-      if (!account) {
-        console.warn('[loadAzureUserData] sem conta autenticada');
-        return;
-      }
-      console.log('[loadAzureUserData] conta:', account.username);
+      if (!account) return;
 
       const token = await getAccessToken(instance, account);
-      console.log('[loadAzureUserData] token obtido OK');
-
       const azureUser = await searchUserByUtilizador(token, utilizador);
-      console.log('[loadAzureUserData] resultado Azure:', azureUser);
 
-      if (!azureUser) {
-        console.warn('[loadAzureUserData] utilizador não encontrado no Azure AD:', utilizador);
-        return;
+      if (azureUser) {
+        foundUser = true;
+        setFormData(prev => ({
+          ...prev,
+          nomeColaborador: azureUser.displayName ? toTitleCase(azureUser.displayName) : prev.nomeColaborador,
+          email: azureUser.mail || azureUser.userPrincipalName || prev.email,
+          funcao: azureUser.jobTitle || prev.funcao,
+          empresa: azureUser.companyName || prev.empresa,
+        }));
       }
-
-      setFormData(prev => ({
-        ...prev,
-        nomeColaborador: azureUser.displayName ? toTitleCase(azureUser.displayName) : prev.nomeColaborador,
-        email: azureUser.mail || azureUser.userPrincipalName || prev.email,
-        funcao: azureUser.jobTitle || prev.funcao,
-        empresa: azureUser.companyName || prev.empresa,
-      }));
-      console.log('[loadAzureUserData] dados preenchidos:', azureUser.displayName, '| cargo:', azureUser.jobTitle, '| empresa:', azureUser.companyName);
     } catch (error) {
-      console.error('[loadAzureUserData] erro:', error);
+      console.warn('[loadAzureUserData] lookup direto falhou:', error);
     } finally {
       setIsFetchingAzureUser(false);
     }
+
+    // Se não encontrou diretamente (sem admin consent ou utilizador não encontrado),
+    // converte o username para texto pesquisável e dispara o autocomplete automaticamente.
+    // Ex: "maria.silva" → "maria silva" para pesquisar por nome no Azure AD.
+    if (!foundUser) {
+      const nomeParaPesquisa = utilizador.replace(/[._-]/g, ' ').trim();
+      if (nomeParaPesquisa.length >= 2) {
+        setTimeout(() => {
+          handleUserNameSearch(nomeParaPesquisa);
+        }, 500);
+      }
+    }
   };
+
 
 
   const resetSelections = () => {
