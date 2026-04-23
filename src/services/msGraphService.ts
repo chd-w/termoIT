@@ -1,5 +1,5 @@
 import { AccountInfo, IPublicClientApplication } from '@azure/msal-browser';
-import { appRedirectUri, loginRequest } from '../config/msalConfig';
+import { loginRequest } from '../config/msalConfig';
 
 export const getAccessToken = async (
   instance: IPublicClientApplication,
