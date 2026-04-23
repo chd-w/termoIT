@@ -272,31 +272,64 @@ const App: React.FC = () => {
     if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
     setIsRunningScript(true);
     setScriptMessage(null);
+    let sessionId: string | null = null;
     try {
       const token = await getAccessToken(instance, account);
-      // ID direto do script Office: ms-officescript://onedrive_business_itemlink/01FHZCF7QLR7VRNZZJWRAZKB7NB6LSAXNB
       const SCRIPT_ID = '01FHZCF7QLR7VRNZZJWRAZKB7NB6LSAXNB';
-      const runRes = await fetch(
-        `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/application/scripts/${SCRIPT_ID}/run`,
-        {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({}),
-        }
-      );
-      if (!runRes.ok) {
-        // Fallback: pesquisar por nome
-        await runOfficeScriptByName(token, pickedDriveItemId, 'PostoTrabalho');
+      const BASE_BETA = `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}`;
+      const BASE_V1 = `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}`;
+
+      // 1. Criar sess\u00e3o persistente no workbook
+      const sessRes = await fetch(`${BASE_V1}/workbook/createSession`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ persistChanges: true }),
+      });
+      if (sessRes.ok) {
+        const sessData = await sessRes.json();
+        sessionId = sessData.id;
       }
+
+      const runHeaders: Record<string, string> = {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...(sessionId ? { 'workbook-session-id': sessionId } : {}),
+      };
+
+      // 2. Tentar pelo ID direto (sem 'application')
+      const r1 = await fetch(`${BASE_BETA}/workbook/scripts/${SCRIPT_ID}/run`, {
+        method: 'POST', headers: runHeaders, body: JSON.stringify({}),
+      });
+      if (!r1.ok) {
+        // 3. Fallback pelo nome
+        const r2 = await fetch(`${BASE_BETA}/workbook/scripts/PostoTrabalho/run`, {
+          method: 'POST', headers: runHeaders, body: JSON.stringify({}),
+        });
+        if (!r2.ok) {
+          const errBody = await r2.text();
+          throw new Error(`Falha ao executar script (${r2.status}): ${errBody}`);
+        }
+      }
+
       setScriptMessage({ type: 'success', text: 'Script PostoTrabalho executado com sucesso!' });
-      if (excelFile) { await handleExcelUpload(excelFile); resetSelections(); }
+      await handleRefreshFile();
     } catch (err: any) {
       setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
     } finally {
+      if (sessionId) {
+        const token2 = await getAccessToken(instance, account).catch(() => null);
+        if (token2) {
+          await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/closeSession`, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token2}`, 'workbook-session-id': sessionId },
+          }).catch(() => {});
+        }
+      }
       setIsRunningScript(false);
       setTimeout(() => setScriptMessage(null), 8000);
     }
   };
+
 
 
   const handleOpenWithFilePicker = () => {
