@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem, listOfficeScripts, OfficeScript } from './services/msGraphService';
 
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
@@ -118,6 +118,9 @@ const App: React.FC = () => {
   // Estado do script Office
   const [isRunningScript, setIsRunningScript] = useState(false);
   const [scriptMessage, setScriptMessage] = useState<{type: 'success' | 'error'; text: string} | null>(null);
+  const [showScriptPicker, setShowScriptPicker] = useState(false);
+  const [availableScripts, setAvailableScripts] = useState<OfficeScript[]>([]);
+  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
 
   // Sincronizar conta ativa
   useEffect(() => {
@@ -267,48 +270,65 @@ const App: React.FC = () => {
     setUserSearchResults([]);
   };
 
-  const handleRunPostoTrabalhoScript = async () => {
+  // Abre o popup e vai buscar a lista de scripts do workbook
+  const handleShowScriptPicker = async () => {
+    if (showScriptPicker) { setShowScriptPicker(false); return; }
     const account = instance.getActiveAccount() ?? accounts[0];
     if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
+    setIsLoadingScripts(true);
+    setShowScriptPicker(true);
+    setAvailableScripts([]);
+    try {
+      const token = await getAccessToken(instance, account);
+      // Tenta com o file ID fornecido e com o picker ID
+      const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
+      let scripts: OfficeScript[] = [];
+      try { scripts = await listOfficeScripts(token, FILE_ID); } catch {}
+      if (scripts.length === 0 && pickedDriveItemId) {
+        try { scripts = await listOfficeScripts(token, pickedDriveItemId); } catch {}
+      }
+      setAvailableScripts(scripts);
+      if (scripts.length === 0) {
+        setScriptMessage({ type: 'error', text: 'Nenhum script encontrado neste workbook. Verifique a permiss\u00e3o Files.ReadWrite.' });
+        setShowScriptPicker(false);
+      }
+    } catch (err: any) {
+      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao listar scripts.' });
+      setShowScriptPicker(false);
+    } finally {
+      setIsLoadingScripts(false);
+    }
+  };
+
+  // Executa um script selecionado na lista
+  const handleRunScript = async (script: OfficeScript) => {
+    setShowScriptPicker(false);
+    const account = instance.getActiveAccount() ?? accounts[0];
+    if (!account) return;
     setIsRunningScript(true);
     setScriptMessage(null);
-
-    // File ID e nome do script fornecidos pelo utilizador
     const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
-    const SCRIPT_NAME = 'PostoTrabalho';
-
     try {
       const token = await getAccessToken(instance, account);
       const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-
-      // Tentativas por ordem de probabilidade de sucesso
       const endpoints = [
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${SCRIPT_NAME}/run`,
-        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/scripts/${SCRIPT_NAME}/run`,
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/application/scripts/${SCRIPT_NAME}/run`,
-        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/application/scripts/${SCRIPT_NAME}/run`,
+        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/application/scripts/${script.id}/run`,
+        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
         ...(pickedDriveItemId ? [
-          `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/scripts/${SCRIPT_NAME}/run`,
-          `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/scripts/${SCRIPT_NAME}/run`,
+          `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/application/scripts/${script.id}/run`,
         ] : []),
       ];
-
       let success = false;
       let lastError = '';
-
       for (const url of endpoints) {
         const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({}) });
         if (res.ok) { success = true; break; }
         const body = await res.text();
-        lastError = `${url.split('/workbook')[1]} → ${res.status}: ${body.substring(0, 120)}`;
-        console.warn('[Script]', lastError);
+        lastError = `(${res.status}) ${body.substring(0, 150)}`;
+        console.warn('[Script] falhou:', url, lastError);
       }
-
-      if (!success) {
-        throw new Error(`Nenhum endpoint funcionou. \u00daltimo erro: ${lastError}`);
-      }
-
-      setScriptMessage({ type: 'success', text: 'Script PostoTrabalho executado com sucesso!' });
+      if (!success) throw new Error(`Script executado com erros: ${lastError}`);
+      setScriptMessage({ type: 'success', text: `Script "${script.name}" executado com sucesso!` });
       await handleRefreshFile();
     } catch (err: any) {
       setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
@@ -317,9 +337,6 @@ const App: React.FC = () => {
       setTimeout(() => setScriptMessage(null), 10000);
     }
   };
-
-
-
 
   const handleOpenWithFilePicker = () => {
     setIsOneDrivePickerOpen(true);
@@ -758,17 +775,35 @@ const App: React.FC = () => {
                     {excelFile?.name}
                   </div>
                   {pickedDriveItemId && (
-                    <button
-                      onClick={handleRunPostoTrabalhoScript}
-                      disabled={isRunningScript}
-                      className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      title="Executar script PostoTrabalho no Excel Online"
-                    >
-                      {isRunningScript
-                        ? <Loader2 size={18} className="animate-spin text-emerald-400" />
-                        : <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>}
-                    </button>
+                    <div className="relative">
+                      <button
+                        onClick={handleShowScriptPicker}
+                        disabled={isRunningScript}
+                        className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Ver e executar scripts deste ficheiro"
+                      >
+                        {isLoadingScripts || isRunningScript
+                          ? <Loader2 size={18} className="animate-spin text-emerald-400" />
+                          : <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>}
+                      </button>
+                      {showScriptPicker && availableScripts.length > 0 && (
+                        <div className="absolute right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl min-w-[200px] overflow-hidden">
+                          <div className="px-3 py-2 text-[10px] font-bold uppercase text-zinc-500 border-b border-zinc-800">Scripts disponíveis</div>
+                          {availableScripts.map(script => (
+                            <button
+                              key={script.id}
+                              onMouseDown={() => handleRunScript(script)}
+                              className="w-full text-left px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors flex items-center gap-2"
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400 flex-shrink-0"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+                              {script.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   )}
+
                   <button
                     onClick={handleRefreshFile}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
