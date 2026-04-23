@@ -16,17 +16,11 @@ msalInstance.initialize().then(() => {
     msalInstance.setActiveAccount(accounts[0])
   }
 
-  // Escutar eventos de sucesso de login
   msalInstance.addEventCallback((event: EventMessage) => {
     if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
       const payload = event.payload as AuthenticationResult;
       const account = payload.account;
       msalInstance.setActiveAccount(account);
-    }
-    
-    if (event.eventType === EventType.LOGIN_FAILURE) {
-      console.error("Login failed:", event.error);
-      alert("Erro no login: " + event.error?.message);
     }
   });
 
