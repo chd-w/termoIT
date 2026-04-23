@@ -217,3 +217,82 @@ export const searchUsersByDisplayName = async (
 
   return [];
 };
+
+// ─── Office Scripts (beta) ────────────────────────────────────────────────────
+
+export interface OfficeScript {
+  id: string;
+  name: string;
+}
+
+/**
+ * Lista todos os Office Scripts associados a um workbook no OneDrive.
+ * Requer: Files.ReadWrite
+ */
+export const listOfficeScripts = async (
+  token: string,
+  itemId: string
+): Promise<OfficeScript[]> => {
+  const res = await fetch(
+    `https://graph.microsoft.com/beta/me/drive/items/${itemId}/workbook/application/scripts`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao listar scripts (${res.status}): ${err}`);
+  }
+  const data = await res.json();
+  return (data?.value ?? []).map((s: any) => ({ id: s.id, name: s.name }));
+};
+
+/**
+ * Executa um Office Script pelo nome num workbook do OneDrive.
+ * Requer: Files.ReadWrite
+ */
+export const runOfficeScriptByName = async (
+  token: string,
+  itemId: string,
+  scriptName: string
+): Promise<void> => {
+  // 1. Listar scripts do workbook
+  const scripts = await listOfficeScripts(token, itemId);
+  const match = scripts.find(
+    s => s.name.toLowerCase().trim() === scriptName.toLowerCase().trim()
+  );
+  if (!match) {
+    throw new Error(
+      `Script "${scriptName}" não encontrado. Scripts disponíveis: ${scripts.map(s => s.name).join(', ') || '(nenhum)'}`
+    );
+  }
+
+  // 2. Executar o script encontrado
+  const runRes = await fetch(
+    `https://graph.microsoft.com/beta/me/drive/items/${itemId}/workbook/application/scripts/${match.id}/run`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  if (!runRes.ok) {
+    const err = await runRes.text();
+    throw new Error(`Erro ao executar script "${scriptName}" (${runRes.status}): ${err}`);
+  }
+};
+
+/**
+ * Obtém o URL do ficheiro para abrir no Excel Online.
+ */
+export const getFileWebUrl = async (token: string, itemId: string): Promise<string> => {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}?$select=webUrl`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Erro ao obter URL do ficheiro (${res.status})`);
+  const data = await res.json();
+  return data.webUrl;
+};
+

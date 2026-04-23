@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut
+  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut, Play
 } from 'lucide-react';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
 import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, runOfficeScriptByName } from './services/msGraphService';
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
@@ -109,10 +109,14 @@ const App: React.FC = () => {
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
 
   // Estado do autocomplete de nome de colaborador
-  const [userSearchResults, setUserSearchResults] = useState<{displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string}[]>([]);
+  const [userSearchResults, setUserSearchResults] = useState<{displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string; companyName?: string}[]>([]);
   const [userSearchLoading, setUserSearchLoading] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userSearchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Estado do script Office
+  const [isRunningScript, setIsRunningScript] = useState(false);
+  const [scriptMessage, setScriptMessage] = useState<{type: 'success' | 'error'; text: string} | null>(null);
 
   // Sincronizar conta ativa
   useEffect(() => {
@@ -262,6 +266,25 @@ const App: React.FC = () => {
     setUserSearchResults([]);
   };
 
+  const handleRunPostoTrabalhoScript = async () => {
+    if (!pickedDriveItemId) return;
+    const account = instance.getActiveAccount() ?? accounts[0];
+    if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
+    setIsRunningScript(true);
+    setScriptMessage(null);
+    try {
+      const token = await getAccessToken(instance, account);
+      await runOfficeScriptByName(token, pickedDriveItemId, 'PostoTrabalho');
+      setScriptMessage({ type: 'success', text: 'Script PostoTrabalho executado com sucesso!' });
+      // Recarrega o ficheiro para refletir altera\u00e7\u00f5es
+      if (excelFile) { await handleExcelUpload(excelFile); resetSelections(); }
+    } catch (err: any) {
+      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
+    } finally {
+      setIsRunningScript(false);
+      setTimeout(() => setScriptMessage(null), 6000);
+    }
+  };
 
   const handleOpenWithFilePicker = () => {
     setIsOneDrivePickerOpen(true);
@@ -675,6 +698,19 @@ const App: React.FC = () => {
                   <div className="text-xs text-zinc-400 max-w-[200px] truncate" title={excelFile?.name}>
                     {excelFile?.name}
                   </div>
+                  {/* Bot\u00e3o executar script - apenas quando o ficheiro \u00e9 do OneDrive */}
+                  {pickedDriveItemId && (
+                    <button
+                      onClick={handleRunPostoTrabalhoScript}
+                      disabled={isRunningScript}
+                      className="w-12 h-12 rounded-xl bg-emerald-700 hover:bg-emerald-600 flex items-center justify-center transition-colors border border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Executar script PostoTrabalho no Excel Online"
+                    >
+                      {isRunningScript
+                        ? <Loader2 size={18} className="animate-spin" />
+                        : <Play size={18} />}
+                    </button>
+                  )}
                   <button
                     onClick={() => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
@@ -685,6 +721,16 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
+            {/* Mensagem de resultado do script */}
+            {scriptMessage && (
+              <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
+                scriptMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              }`}>
+                {scriptMessage.text}
+              </div>
+            )}
             
             {excelFile && (
               <div className="mt-8 space-y-6">
