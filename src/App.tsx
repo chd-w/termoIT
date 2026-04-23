@@ -9,9 +9,9 @@ import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
 import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem } from './services/msGraphService';
-import { normalizeAndUploadToOneDrive } from './services/excelNormalizer';
 
 import OneDrivePicker from './components/OneDrivePicker';
+import AddRowModal from './components/AddRowModal';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
 
@@ -108,6 +108,7 @@ const App: React.FC = () => {
   const technicianName = selectedTechnician === 'Outro' ? customTechnician : selectedTechnician;
 
   const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
+  const [isAddRowModalOpen, setIsAddRowModalOpen] = useState(false);
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
   const [pickedFileName, setPickedFileName] = useState<string | undefined>(undefined);
   const [isRefreshingFile, setIsRefreshingFile] = useState(false);
@@ -118,9 +119,6 @@ const App: React.FC = () => {
   const [showUserDropdown, setShowUserDropdown] = useState(false);
   const userSearchTimeout = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Estado do script Office
-  const [isRunningScript, setIsRunningScript] = useState(false);
-  const [scriptMessage, setScriptMessage] = useState<{type: 'success' | 'error'; text: string} | null>(null);
   // Sincronizar conta ativa
   useEffect(() => {
     const activeAccount = instance.getActiveAccount();
@@ -267,44 +265,6 @@ const App: React.FC = () => {
     }));
     setShowUserDropdown(false);
     setUserSearchResults([]);
-  };
-
-  /**
-   * Normaliza o ficheiro Excel localmente (replica o Office Script)
-   * e faz upload de volta ao OneDrive.
-   */
-  const handleRunNormalizer = async () => {
-    if (!pickedDriveItemId) {
-      setScriptMessage({ type: 'error', text: 'Selecione primeiro um ficheiro Excel do OneDrive.' });
-      return;
-    }
-    const account = instance.getActiveAccount() ?? accounts[0];
-    if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
-    setIsRunningScript(true);
-    setScriptMessage(null);
-
-    try {
-      const token = await getAccessToken(instance, account);
-
-      // Re-descarrega o ficheiro atual do OneDrive
-      const buffer = await downloadDriveItem(token, pickedDriveItemId);
-
-      // Normaliza e faz upload de volta
-      const result = await normalizeAndUploadToOneDrive(buffer, pickedDriveItemId, token);
-
-      setScriptMessage({
-        type: 'success',
-        text: `Normalização concluída! PT: ${result.summary.ptRows} linhas | Telecom: ${result.summary.telecomRows} linhas | REP+Stock: ${result.summary.combinedRows} linhas`,
-      });
-
-      // Recarrega o ficheiro para atualizar os dados na app
-      await handleRefreshFile();
-    } catch (err: any) {
-      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao normalizar ficheiro.' });
-    } finally {
-      setIsRunningScript(false);
-      setTimeout(() => setScriptMessage(null), 12000);
-    }
   };
 
   const handleOpenWithFilePicker = () => {
@@ -761,15 +721,11 @@ const App: React.FC = () => {
                   </div>
                   {pickedDriveItemId && (
                     <button
-                      onClick={handleRunNormalizer}
-                      disabled={isRunningScript || !pickedDriveItemId}
-                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-xs font-bold uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                      title="Normaliza as folhas do Excel (PT, Telecom, REP, Stock)"
+                      onClick={() => setIsAddRowModalOpen(true)}
+                      className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
+                      title="Adicionar registo numa tabela Excel"
                     >
-                      {isRunningScript
-                        ? <><Loader2 size={13} className="animate-spin" /> A normalizar...</>
-                        : <><RefreshCw size={13} /> Normalizar Excel</>
-                      }
+                      <Plus size={18} className="text-violet-400" />
                     </button>
                   )}
 
@@ -784,16 +740,6 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
-            {scriptMessage && (
-              <div className={`mt-2 px-3 py-2 rounded-xl text-xs font-medium ${
-                scriptMessage.type === 'success'
-                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
-              }`}>
-                {scriptMessage.text}
-              </div>
-            )}
-            
             {excelFile && (
               <div className="mt-8 space-y-6">
                 <div className="flex items-center justify-between">
@@ -1181,6 +1127,17 @@ const App: React.FC = () => {
           onFilePicked={handleOneDriveFilePicked}
           onClose={() => setIsOneDrivePickerOpen(false)}
           pickedItemId={pickedDriveItemId}
+        />
+      )}
+
+      {isAddRowModalOpen && pickedDriveItemId && (
+        <AddRowModal
+          itemId={pickedDriveItemId}
+          onClose={() => setIsAddRowModalOpen(false)}
+          onSuccess={() => {
+            // Recarrega os dados da app após inserção para refletir a nova linha
+            handleRefreshFile();
+          }}
         />
       )}
     </div>
