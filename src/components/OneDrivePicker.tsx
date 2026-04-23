@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useMsal } from '@azure/msal-react';
 import { Folder, FileSpreadsheet, ChevronRight, RefreshCw, X, Home, Loader2, LogIn } from 'lucide-react';
 import { getAccessToken, listDriveItems, downloadDriveItem, DriveItem } from '../services/msGraphService';
-import { popupRedirectUri, loginRequest } from '../config/msalConfig';
+import { appRedirectUri, loginRequest } from '../config/msalConfig';
 
 interface OneDrivePickerProps {
   onFilePicked: (buffer: ArrayBuffer, name: string, itemId: string) => void;
@@ -73,17 +73,12 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
   const handleLogin = async () => {
     setError('');
     try {
-      // Usa uma página blank.html dedicada como redirectUri do popup.
-      // Isto evita que a SPA completa (com toda a inicialização MSAL) seja
-      // carregada dentro do popup, o que causava o botão ficar sem resposta.
-      const loginResult = await instance.loginPopup({
+      await instance.loginRedirect({
         ...loginRequest,
-        redirectUri: popupRedirectUri,
+        redirectUri: appRedirectUri,
         prompt: 'select_account',
       });
-      if (loginResult.account) {
-        instance.setActiveAccount(loginResult.account);
-      }
+      // A execução irá parar aqui porque a página navega para a Microsoft
     } catch (e: any) {
       if (e?.errorCode !== 'user_cancelled') {
         setError(`Falha no login: ${e?.message ?? e?.errorCode ?? 'erro desconhecido'}`);

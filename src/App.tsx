@@ -152,15 +152,13 @@ const App: React.FC = () => {
       if (account) return account;
     }
 
-    const loginResult = await instance.loginPopup({
+    await instance.loginRedirect({
       ...loginRequest,
       prompt: 'select_account',
     });
-    account = loginResult.account ?? undefined;
-    if (account) {
-      instance.setActiveAccount(account);
-    }
-    return account;
+    // Execução para aqui porque a página redireciona. 
+    // O utilizador terá de clicar de novo quando voltar (já autenticado).
+    return undefined;
   };
 
   const loadAzureUserData = async (utilizador: string) => {
