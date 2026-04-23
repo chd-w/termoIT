@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, runOfficeScriptByName } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, runOfficeScriptByName, downloadDriveItem } from './services/msGraphService';
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
@@ -302,6 +302,30 @@ const App: React.FC = () => {
   const handleOpenWithFilePicker = () => {
     setIsOneDrivePickerOpen(true);
   };
+
+  // Refresh: re-descarrega do OneDrive se o ficheiro veio de lá, ou re-processa o local
+  const handleRefreshFile = async () => {
+    if (pickedDriveItemId && excelFile) {
+      try {
+        const account = instance.getActiveAccount() ?? accounts[0];
+        if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
+        const token = await getAccessToken(instance, account);
+        const buffer = await downloadDriveItem(token, pickedDriveItemId);
+        const freshFile = new File([buffer], excelFile.name, {
+          type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        });
+        setExcelFile(freshFile);
+        await handleExcelUpload(freshFile);
+        resetSelections();
+      } catch (err: any) {
+        alert('Erro ao recarregar ficheiro do OneDrive: ' + (err?.message ?? err));
+      }
+    } else if (excelFile) {
+      await handleExcelUpload(excelFile);
+      resetSelections();
+    }
+  };
+
 
   const handleOneDriveFilePicked = async (buffer: ArrayBuffer, name: string, itemId: string) => {
     try {
@@ -724,9 +748,9 @@ const App: React.FC = () => {
                     </button>
                   )}
                   <button
-                    onClick={() => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
+                    onClick={handleRefreshFile}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
-                    title="Recarregar Ficheiro"
+                    title={pickedDriveItemId ? 'Recarregar do OneDrive' : 'Recarregar Ficheiro'}
                   >
                     <RefreshCw size={18} className="text-emerald-400" />
                   </button>
