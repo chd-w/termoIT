@@ -8,7 +8,8 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem, listOfficeScripts, OfficeScript, runOfficeScriptById } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem } from './services/msGraphService';
+import { normalizeAndUploadToOneDrive } from './services/excelNormalizer';
 
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
@@ -120,10 +121,6 @@ const App: React.FC = () => {
   // Estado do script Office
   const [isRunningScript, setIsRunningScript] = useState(false);
   const [scriptMessage, setScriptMessage] = useState<{type: 'success' | 'error'; text: string} | null>(null);
-  const [showScriptPicker, setShowScriptPicker] = useState(false);
-  const [availableScripts, setAvailableScripts] = useState<OfficeScript[]>([]);
-  const [isLoadingScripts, setIsLoadingScripts] = useState(false);
-
   // Sincronizar conta ativa
   useEffect(() => {
     const activeAccount = instance.getActiveAccount();
@@ -272,55 +269,41 @@ const App: React.FC = () => {
     setUserSearchResults([]);
   };
 
-  // Abre o popup e vai buscar a lista de scripts do workbook
-  const handleShowScriptPicker = async () => {
-    if (showScriptPicker) { setShowScriptPicker(false); return; }
+  /**
+   * Normaliza o ficheiro Excel localmente (replica o Office Script)
+   * e faz upload de volta ao OneDrive.
+   */
+  const handleRunNormalizer = async () => {
     if (!pickedDriveItemId) {
       setScriptMessage({ type: 'error', text: 'Selecione primeiro um ficheiro Excel do OneDrive.' });
       return;
     }
     const account = instance.getActiveAccount() ?? accounts[0];
     if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
-    setIsLoadingScripts(true);
-    setShowScriptPicker(true);
-    setAvailableScripts([]);
-    try {
-      const token = await getAccessToken(instance, account);
-      const scripts = await listOfficeScripts(token, pickedDriveItemId);
-      setAvailableScripts(scripts);
-      if (scripts.length === 0) {
-        setScriptMessage({ type: 'error', text: 'Nenhum script associado ao ficheiro selecionado.' });
-        setShowScriptPicker(false);
-      }
-    } catch (err: any) {
-      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao listar scripts.' });
-      setShowScriptPicker(false);
-    } finally {
-      setIsLoadingScripts(false);
-    }
-  };
-
-  // Executa um script selecionado na lista
-  const handleRunScript = async (script: OfficeScript) => {
-    setShowScriptPicker(false);
-    if (!pickedDriveItemId) {
-      setScriptMessage({ type: 'error', text: 'Selecione primeiro um ficheiro do OneDrive.' });
-      return;
-    }
-    const account = instance.getActiveAccount() ?? accounts[0];
-    if (!account) return;
     setIsRunningScript(true);
     setScriptMessage(null);
+
     try {
       const token = await getAccessToken(instance, account);
-      await runOfficeScriptById(token, pickedDriveItemId, script.id);
-      setScriptMessage({ type: 'success', text: `Script "${script.name}" executado com sucesso!` });
+
+      // Re-descarrega o ficheiro atual do OneDrive
+      const buffer = await downloadDriveItem(token, pickedDriveItemId);
+
+      // Normaliza e faz upload de volta
+      const result = await normalizeAndUploadToOneDrive(buffer, pickedDriveItemId, token);
+
+      setScriptMessage({
+        type: 'success',
+        text: `Normalização concluída! PT: ${result.summary.ptRows} linhas | Telecom: ${result.summary.telecomRows} linhas | REP+Stock: ${result.summary.combinedRows} linhas`,
+      });
+
+      // Recarrega o ficheiro para atualizar os dados na app
       await handleRefreshFile();
     } catch (err: any) {
-      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
+      setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao normalizar ficheiro.' });
     } finally {
       setIsRunningScript(false);
-      setTimeout(() => setScriptMessage(null), 10000);
+      setTimeout(() => setScriptMessage(null), 12000);
     }
   };
 
@@ -777,33 +760,17 @@ const App: React.FC = () => {
                     {excelFile?.name}
                   </div>
                   {pickedDriveItemId && (
-                    <div className="relative">
-                      <button
-                        onClick={handleShowScriptPicker}
-                        disabled={isRunningScript}
-                        className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                        title="Ver e executar scripts deste ficheiro"
-                      >
-                        {isLoadingScripts || isRunningScript
-                          ? <Loader2 size={18} className="animate-spin text-emerald-400" />
-                          : <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>}
-                      </button>
-                      {showScriptPicker && availableScripts.length > 0 && (
-                        <div className="absolute right-0 top-full mt-2 z-50 bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl min-w-[200px] overflow-hidden">
-                          <div className="px-3 py-2 text-[10px] font-bold uppercase text-zinc-500 border-b border-zinc-800">Scripts disponíveis</div>
-                          {availableScripts.map(script => (
-                            <button
-                              key={script.id}
-                              onMouseDown={() => handleRunScript(script)}
-                              className="w-full text-left px-4 py-3 text-sm text-zinc-200 hover:bg-zinc-800 transition-colors flex items-center gap-2"
-                            >
-                              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400 flex-shrink-0"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-                              {script.name}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
+                    <button
+                      onClick={handleRunNormalizer}
+                      disabled={isRunningScript || !pickedDriveItemId}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl bg-violet-600 hover:bg-violet-700 text-xs font-bold uppercase transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Normaliza as folhas do Excel (PT, Telecom, REP, Stock)"
+                    >
+                      {isRunningScript
+                        ? <><Loader2 size={13} className="animate-spin" /> A normalizar...</>
+                        : <><RefreshCw size={13} /> Normalizar Excel</>
+                      }
+                    </button>
                   )}
 
                   <button
@@ -818,7 +785,7 @@ const App: React.FC = () => {
               )}
             </div>
             {scriptMessage && (
-              <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
+              <div className={`mt-2 px-3 py-2 rounded-xl text-xs font-medium ${
                 scriptMessage.type === 'success'
                   ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
                   : 'bg-red-500/10 border border-red-500/30 text-red-400'
