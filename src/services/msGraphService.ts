@@ -140,34 +140,33 @@ export const searchUserByUtilizador = async (
 
 /**
  * Pesquisa utilizadores no Azure AD por displayName (para autocomplete).
- * Requer: User.ReadBasic.All ou User.Read.All
+ * Usa /me/people que requer apenas People.Read (sem admin consent).
  */
 export const searchUsersByDisplayName = async (
   token: string,
   query: string
 ): Promise<AzureUserProfile[]> => {
-  const sanitized = escapeODataValue(query.trim());
-  if (!sanitized || sanitized.length < 2) return [];
+  if (!query || query.trim().length < 2) return [];
 
-  const url = new URL('https://graph.microsoft.com/v1.0/users');
+  // /me/people pesquisa colegas, contactos e pessoas com quem o utilizador interage
+  const url = new URL('https://graph.microsoft.com/v1.0/me/people');
   url.searchParams.set('$top', '8');
-  url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
-  url.searchParams.set('$filter', `startswith(displayName,'${sanitized}')`);
-  url.searchParams.set('$count', 'true');
-  url.searchParams.set('$orderby', 'displayName');
+  url.searchParams.set('$select', 'displayName,scoredEmailAddresses,jobTitle,userPrincipalName');
+  url.searchParams.set('$search', query.trim());
 
   const res = await fetch(url.toString(), {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ConsistencyLevel: 'eventual',
-    },
+    headers: { Authorization: `Bearer ${token}` },
   });
 
-  if (!res.ok) return [];
+  if (!res.ok) {
+    console.warn('[searchUsersByDisplayName] /me/people falhou:', res.status, await res.text());
+    return [];
+  }
+
   const data = await res.json();
   return (data?.value ?? []).map((u: any) => ({
     displayName: u.displayName,
-    mail: u.mail,
+    mail: u.scoredEmailAddresses?.[0]?.address ?? u.userPrincipalName,
     userPrincipalName: u.userPrincipalName,
     jobTitle: u.jobTitle,
   }));
