@@ -268,48 +268,44 @@ const App: React.FC = () => {
   };
 
   const handleRunPostoTrabalhoScript = async () => {
-    if (!pickedDriveItemId) return;
     const account = instance.getActiveAccount() ?? accounts[0];
     if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
     setIsRunningScript(true);
     setScriptMessage(null);
-    let sessionId: string | null = null;
+
+    // File ID e nome do script fornecidos pelo utilizador
+    const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
+    const SCRIPT_NAME = 'PostoTrabalho';
+
     try {
       const token = await getAccessToken(instance, account);
-      const SCRIPT_ID = '01FHZCF7QLR7VRNZZJWRAZKB7NB6LSAXNB';
-      const BASE_BETA = `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}`;
-      const BASE_V1 = `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}`;
+      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
 
-      // 1. Criar sess\u00e3o persistente no workbook
-      const sessRes = await fetch(`${BASE_V1}/workbook/createSession`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ persistChanges: true }),
-      });
-      if (sessRes.ok) {
-        const sessData = await sessRes.json();
-        sessionId = sessData.id;
+      // Tentativas por ordem de probabilidade de sucesso
+      const endpoints = [
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${SCRIPT_NAME}/run`,
+        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/scripts/${SCRIPT_NAME}/run`,
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/application/scripts/${SCRIPT_NAME}/run`,
+        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/application/scripts/${SCRIPT_NAME}/run`,
+        ...(pickedDriveItemId ? [
+          `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/scripts/${SCRIPT_NAME}/run`,
+          `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/scripts/${SCRIPT_NAME}/run`,
+        ] : []),
+      ];
+
+      let success = false;
+      let lastError = '';
+
+      for (const url of endpoints) {
+        const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({}) });
+        if (res.ok) { success = true; break; }
+        const body = await res.text();
+        lastError = `${url.split('/workbook')[1]} → ${res.status}: ${body.substring(0, 120)}`;
+        console.warn('[Script]', lastError);
       }
 
-      const runHeaders: Record<string, string> = {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        ...(sessionId ? { 'workbook-session-id': sessionId } : {}),
-      };
-
-      // 2. Tentar pelo ID direto (sem 'application')
-      const r1 = await fetch(`${BASE_BETA}/workbook/scripts/${SCRIPT_ID}/run`, {
-        method: 'POST', headers: runHeaders, body: JSON.stringify({}),
-      });
-      if (!r1.ok) {
-        // 3. Fallback pelo nome
-        const r2 = await fetch(`${BASE_BETA}/workbook/scripts/PostoTrabalho/run`, {
-          method: 'POST', headers: runHeaders, body: JSON.stringify({}),
-        });
-        if (!r2.ok) {
-          const errBody = await r2.text();
-          throw new Error(`Falha ao executar script (${r2.status}): ${errBody}`);
-        }
+      if (!success) {
+        throw new Error(`Nenhum endpoint funcionou. \u00daltimo erro: ${lastError}`);
       }
 
       setScriptMessage({ type: 'success', text: 'Script PostoTrabalho executado com sucesso!' });
@@ -317,19 +313,11 @@ const App: React.FC = () => {
     } catch (err: any) {
       setScriptMessage({ type: 'error', text: err?.message ?? 'Erro ao executar script.' });
     } finally {
-      if (sessionId) {
-        const token2 = await getAccessToken(instance, account).catch(() => null);
-        if (token2) {
-          await fetch(`https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/closeSession`, {
-            method: 'POST',
-            headers: { Authorization: `Bearer ${token2}`, 'workbook-session-id': sessionId },
-          }).catch(() => {});
-        }
-      }
       setIsRunningScript(false);
-      setTimeout(() => setScriptMessage(null), 8000);
+      setTimeout(() => setScriptMessage(null), 10000);
     }
   };
+
 
 
 
