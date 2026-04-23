@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { PublicClientApplication } from '@azure/msal-browser'
+import { PublicClientApplication, EventType, EventMessage, AuthenticationResult } from '@azure/msal-browser'
 import { MsalProvider } from '@azure/msal-react'
 import { msalConfig } from './config/msalConfig'
 import App from './App.tsx'
@@ -10,32 +10,40 @@ const msalInstance = new PublicClientApplication(msalConfig)
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 msalInstance.initialize().then(() => {
-  // Tratar redirecionamento antes de fazer render
-  return msalInstance.handleRedirectPromise().then((response) => {
-    // Se response existir, foi um redirect de login bem-sucedido
-    if (response !== null && response.account !== null) {
-      msalInstance.setActiveAccount(response.account);
-    } else {
-      // Se não, verificar se há alguma conta já com sessão
-      const existingAccounts = msalInstance.getAllAccounts();
-      if (!msalInstance.getActiveAccount() && existingAccounts.length > 0) {
-        msalInstance.setActiveAccount(existingAccounts[0]);
-      }
-    }
+  // Definir conta ativa inicialmente se existir em cache
+  const accounts = msalInstance.getAllAccounts()
+  if (!msalInstance.getActiveAccount() && accounts.length > 0) {
+    msalInstance.setActiveAccount(accounts[0])
+  }
 
-    root.render(
-      <React.StrictMode>
-        <MsalProvider instance={msalInstance}>
-          <App />
-        </MsalProvider>
-      </React.StrictMode>,
-    );
+  // Escutar eventos de sucesso de login
+  msalInstance.addEventCallback((event: EventMessage) => {
+    if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
+      const payload = event.payload as AuthenticationResult;
+      const account = payload.account;
+      msalInstance.setActiveAccount(account);
+    }
+    
+    if (event.eventType === EventType.LOGIN_FAILURE) {
+      console.error("Login failed:", event.error);
+      alert("Erro no login: " + event.error?.message);
+    }
   });
+
+  // Renderizar e deixar o MsalProvider processar o redirecionamento automaticamente
+  root.render(
+    <React.StrictMode>
+      <MsalProvider instance={msalInstance}>
+        <App />
+      </MsalProvider>
+    </React.StrictMode>,
+  )
 }).catch((error) => {
-  console.error('Falha ao inicializar MSAL:', error);
+  console.error('Falha ao inicializar MSAL:', error)
+  alert('Erro ao inicializar MSAL: ' + error.message)
   root.render(
     <React.StrictMode>
       <App />
     </React.StrictMode>,
-  );
-});
+  )
+})
