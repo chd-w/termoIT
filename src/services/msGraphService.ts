@@ -285,6 +285,32 @@ export const runOfficeScriptByName = async (
 };
 
 /**
+ * Executa um Office Script pelo id num workbook do OneDrive.
+ * Requer: Files.ReadWrite
+ */
+export const runOfficeScriptById = async (
+  token: string,
+  itemId: string,
+  scriptId: string
+): Promise<void> => {
+  const runRes = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/scripts/${scriptId}/run`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    }
+  );
+  if (!runRes.ok) {
+    const err = await runRes.text();
+    throw new Error(`Erro ao executar script (${runRes.status}): ${err}`);
+  }
+};
+
+/**
  * Obtém o URL do ficheiro para abrir no Excel Online.
  */
 export const getFileWebUrl = async (token: string, itemId: string): Promise<string> => {

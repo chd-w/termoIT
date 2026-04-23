@@ -8,7 +8,7 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem, listOfficeScripts, OfficeScript } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem, listOfficeScripts, OfficeScript, runOfficeScriptById } from './services/msGraphService';
 
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
@@ -108,6 +108,8 @@ const App: React.FC = () => {
 
   const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
+  const [pickedFileName, setPickedFileName] = useState<string | undefined>(undefined);
+  const [isRefreshingFile, setIsRefreshingFile] = useState(false);
 
   // Estado do autocomplete de nome de colaborador
   const [userSearchResults, setUserSearchResults] = useState<{displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string; companyName?: string}[]>([]);
@@ -273,6 +275,10 @@ const App: React.FC = () => {
   // Abre o popup e vai buscar a lista de scripts do workbook
   const handleShowScriptPicker = async () => {
     if (showScriptPicker) { setShowScriptPicker(false); return; }
+    if (!pickedDriveItemId) {
+      setScriptMessage({ type: 'error', text: 'Selecione primeiro um ficheiro Excel do OneDrive.' });
+      return;
+    }
     const account = instance.getActiveAccount() ?? accounts[0];
     if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
     setIsLoadingScripts(true);
@@ -280,22 +286,10 @@ const App: React.FC = () => {
     setAvailableScripts([]);
     try {
       const token = await getAccessToken(instance, account);
-      const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
-      const FILE_PATH = 'Documentos/Asset/DeskSide-Posto%20de%20Trabalho.xlsx';
-      const BASE = 'https://graph.microsoft.com/v1.0/me/drive';
-      let scripts: OfficeScript[] = [];
-      // 1. Tenta pelo path do ficheiro (mais fiável)
-      try {
-        const res = await fetch(`${BASE}/root:/${FILE_PATH}:/workbook/scripts`, { headers: { Authorization: `Bearer ${token}` } });
-        if (res.ok) { const d = await res.json(); scripts = (d?.value ?? []).map((s: any) => ({ id: s.id, name: s.name })); }
-      } catch {}
-      // 2. Fallback pelo ID
-      if (scripts.length === 0) { try { scripts = await listOfficeScripts(token, FILE_ID); } catch {} }
-      // 3. Fallback pelo picker ID
-      if (scripts.length === 0 && pickedDriveItemId) { try { scripts = await listOfficeScripts(token, pickedDriveItemId); } catch {} }
+      const scripts = await listOfficeScripts(token, pickedDriveItemId);
       setAvailableScripts(scripts);
       if (scripts.length === 0) {
-        setScriptMessage({ type: 'error', text: 'Nenhum script encontrado. Verifique a permiss\u00e3o Files.ReadWrite e que o ficheiro tem scripts.' });
+        setScriptMessage({ type: 'error', text: 'Nenhum script associado ao ficheiro selecionado.' });
         setShowScriptPicker(false);
       }
     } catch (err: any) {
@@ -309,39 +303,17 @@ const App: React.FC = () => {
   // Executa um script selecionado na lista
   const handleRunScript = async (script: OfficeScript) => {
     setShowScriptPicker(false);
+    if (!pickedDriveItemId) {
+      setScriptMessage({ type: 'error', text: 'Selecione primeiro um ficheiro do OneDrive.' });
+      return;
+    }
     const account = instance.getActiveAccount() ?? accounts[0];
     if (!account) return;
     setIsRunningScript(true);
     setScriptMessage(null);
-    const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
     try {
       const token = await getAccessToken(instance, account);
-      const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
-      const FILE_PATH = 'Documentos/Asset/DeskSide-Posto%20de%20Trabalho.xlsx';
-      const BASE = 'https://graph.microsoft.com/v1.0/me/drive';
-      const endpoints = [
-        // 1. Pelo path (mais fiável)
-        `${BASE}/root:/${FILE_PATH}:/workbook/scripts/${script.id}/run`,
-        `${BASE}/root:/${FILE_PATH}:/workbook/scripts/${script.name}/run`,
-        // 2. Pelo ID
-        `${BASE}/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
-        `${BASE}/items/${FILE_ID}/workbook/scripts/${script.name}/run`,
-        // 3. Pelo picker ID
-        ...(pickedDriveItemId ? [
-          `${BASE}/items/${pickedDriveItemId}/workbook/scripts/${script.id}/run`,
-        ] : []),
-      ];
-
-      let success = false;
-      let lastError = '';
-      for (const url of endpoints) {
-        const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify({}) });
-        if (res.ok) { success = true; break; }
-        const body = await res.text();
-        lastError = `(${res.status}) ${body.substring(0, 150)}`;
-        console.warn('[Script] falhou:', url, lastError);
-      }
-      if (!success) throw new Error(`Script executado com erros: ${lastError}`);
+      await runOfficeScriptById(token, pickedDriveItemId, script.id);
       setScriptMessage({ type: 'success', text: `Script "${script.name}" executado com sucesso!` });
       await handleRefreshFile();
     } catch (err: any) {
@@ -358,24 +330,35 @@ const App: React.FC = () => {
 
   // Refresh: re-descarrega do OneDrive se o ficheiro veio de lá, ou re-processa o local
   const handleRefreshFile = async () => {
-    if (pickedDriveItemId && excelFile) {
-      try {
+    if (isRefreshingFile) return;
+    setIsRefreshingFile(true);
+    try {
+      if (pickedDriveItemId) {
         const account = instance.getActiveAccount() ?? accounts[0];
         if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
         const token = await getAccessToken(instance, account);
         const buffer = await downloadDriveItem(token, pickedDriveItemId);
-        const freshFile = new File([buffer], excelFile.name, {
+        const fileName = pickedFileName || excelFile?.name || 'ficheiro-onedrive.xlsx';
+        const freshFile = new File([buffer], fileName, {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         });
         setExcelFile(freshFile);
         await handleExcelUpload(freshFile);
         resetSelections();
-      } catch (err: any) {
-        alert('Erro ao recarregar ficheiro do OneDrive: ' + (err?.message ?? err));
+        return;
       }
-    } else if (excelFile) {
-      await handleExcelUpload(excelFile);
-      resetSelections();
+
+      if (excelFile) {
+        await handleExcelUpload(excelFile);
+        resetSelections();
+        return;
+      }
+
+      alert('Nenhum ficheiro carregado para recarregar.');
+    } catch (err: any) {
+      alert(`Erro ao recarregar ficheiro: ${err?.message ?? err}`);
+    } finally {
+      setIsRefreshingFile(false);
     }
   };
 
@@ -386,6 +369,7 @@ const App: React.FC = () => {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       setPickedDriveItemId(itemId);
+      setPickedFileName(name);
       setExcelFile(file);
       await handleExcelUpload(file);
       resetSelections();
@@ -402,6 +386,7 @@ const App: React.FC = () => {
       if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
         setExcelFile(file); 
         setPickedDriveItemId(undefined);
+        setPickedFileName(file.name);
         handleExcelUpload(file); 
         resetSelections();
       } else {
@@ -712,8 +697,11 @@ const App: React.FC = () => {
                 <LogIn size={16} />
               </button>
             ) : (
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-2.5">
                 <div className="w-2 h-2 rounded-full bg-emerald-400" title={accounts[0]?.username}></div>
+                <span className="text-xs text-zinc-300 max-w-[180px] truncate" title={accounts[0]?.name || accounts[0]?.username}>
+                  {accounts[0]?.name || accounts[0]?.username}
+                </span>
                 <button
                   onClick={() => instance.logoutRedirect()}
                   title={`Terminar sessão (${accounts[0]?.username})`}
@@ -820,10 +808,11 @@ const App: React.FC = () => {
 
                   <button
                     onClick={handleRefreshFile}
-                    className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
+                    disabled={isRefreshingFile}
+                    className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     title={pickedDriveItemId ? 'Recarregar do OneDrive' : 'Recarregar Ficheiro'}
                   >
-                    <RefreshCw size={18} className="text-emerald-400" />
+                    <RefreshCw size={18} className={`text-emerald-400 ${isRefreshingFile ? 'animate-spin' : ''}`} />
                   </button>
                 </div>
               )}
@@ -1210,7 +1199,7 @@ const App: React.FC = () => {
               </button>
               <button 
                 onClick={handleDownloadImage} 
-                className="bg-green-600 hover:bg-green-700 px-6 py-4 rounded-xl font-bold transition-colors flex items-center"
+                className="px-6 py-4 border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white rounded-xl font-bold transition-colors flex items-center"
                 title="Baixar como JPG"
               >
                 {isCapturingImage ? <Loader2 className="animate-spin h-5 w-5" /> : <Download className="h-5 w-5" />}
