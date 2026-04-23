@@ -8,7 +8,8 @@ import html2canvas from 'html2canvas';
 import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
-import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, runOfficeScriptByName, downloadDriveItem } from './services/msGraphService';
+import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem } from './services/msGraphService';
+
 import OneDrivePicker from './components/OneDrivePicker';
 // @ts-ignore
 import logoImg from './assets/logo.jpg';
