@@ -11,22 +11,26 @@ const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 msalInstance
   .initialize()
-  // CRUCIAL: chamar handleRedirectPromise ANTES de fazer render
-  // para que os tokens do redirect de login sejam guardados
-  .then(() => msalInstance.handleRedirectPromise())
+  .then(() => {
+    // CRITICAL: processar o redirect de login ANTES de fazer render.
+    // Sem isto, o código de autenticação no URL é ignorado e a sessão perde-se.
+    return msalInstance.handleRedirectPromise()
+  })
   .then((response) => {
-    // Se vierem de um redirect de login, guardar a conta
     if (response?.account) {
+      // Veio de um redirect de login bem-sucedido
+      console.log('[MSAL] Login via redirect OK:', response.account.username)
       msalInstance.setActiveAccount(response.account)
     } else {
-      // Se não, restaurar conta em cache (sessões anteriores)
-      const accounts = msalInstance.getAllAccounts()
-      if (!msalInstance.getActiveAccount() && accounts.length > 0) {
-        msalInstance.setActiveAccount(accounts[0])
+      // Restaurar sessão em cache (visitas seguintes)
+      const cached = msalInstance.getAllAccounts()
+      console.log('[MSAL] Contas em cache:', cached.map(a => a.username))
+      if (cached.length > 0 && !msalInstance.getActiveAccount()) {
+        msalInstance.setActiveAccount(cached[0])
       }
     }
 
-    // Ouvir logins futuros (ex: silent token refresh)
+    // Ouvir logins futuros
     msalInstance.addEventCallback((event: EventMessage) => {
       if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
         const payload = event.payload as AuthenticationResult
@@ -45,7 +49,8 @@ msalInstance
     )
   })
   .catch((error) => {
-    console.error('Falha ao inicializar MSAL:', error)
+    // Nunca deixar a app em branco — renderizar mesmo com erro
+    console.error('[MSAL] Erro na inicialização:', error)
     root.render(
       <React.StrictMode>
         <MsalProvider instance={msalInstance}>

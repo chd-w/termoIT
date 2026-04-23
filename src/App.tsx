@@ -108,12 +108,31 @@ const App: React.FC = () => {
   const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
 
+  // Sincronizar conta ativa
   useEffect(() => {
     const activeAccount = instance.getActiveAccount();
     if (!activeAccount && accounts.length > 0) {
       instance.setActiveAccount(accounts[0]);
     }
   }, [accounts, instance]);
+
+  // Tentar SSO silencioso no arranque para autenticar automaticamente utilizadores corporativos.
+  // Em ambientes empresariais com sessão Microsoft ativa, isto autentica sem qualquer redirect.
+  useEffect(() => {
+    if (accounts.length > 0) return; // já autenticado
+    instance.ssoSilent({
+      scopes: loginRequest.scopes ?? ['User.Read'],
+      redirectUri: appRedirectUri,
+    }).then(response => {
+      if (response?.account) {
+        instance.setActiveAccount(response.account);
+      }
+    }).catch(() => {
+      // Sem sessão SSO ativa — o utilizador carrega o botão de login manual
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
 
   const tryResumeSsoSession = async (): Promise<boolean> => {
     const existingAccount = instance.getActiveAccount() ?? accounts[0];
