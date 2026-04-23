@@ -170,15 +170,30 @@ const App: React.FC = () => {
   };
 
   const loadAzureUserData = async (utilizador: string) => {
-    if (!utilizador) return;
+    if (!utilizador) {
+      console.log('[loadAzureUserData] utilizador vazio, a ignorar');
+      return;
+    }
+    console.log('[loadAzureUserData] a procurar:', utilizador);
     setIsFetchingAzureUser(true);
     try {
       const account = await ensureMicrosoft365Login();
-      if (!account) return;
+      if (!account) {
+        console.warn('[loadAzureUserData] sem conta autenticada');
+        return;
+      }
+      console.log('[loadAzureUserData] conta:', account.username);
 
       const token = await getAccessToken(instance, account);
+      console.log('[loadAzureUserData] token obtido OK');
+
       const azureUser = await searchUserByUtilizador(token, utilizador);
-      if (!azureUser) return;
+      console.log('[loadAzureUserData] resultado Azure:', azureUser);
+
+      if (!azureUser) {
+        console.warn('[loadAzureUserData] utilizador não encontrado no Azure AD:', utilizador);
+        return;
+      }
 
       setFormData(prev => ({
         ...prev,
@@ -186,12 +201,14 @@ const App: React.FC = () => {
         email: azureUser.mail || azureUser.userPrincipalName || prev.email,
         funcao: azureUser.jobTitle || prev.funcao,
       }));
+      console.log('[loadAzureUserData] dados preenchidos:', azureUser.displayName);
     } catch (error) {
-      console.warn('Não foi possível obter dados do Azure para o utilizador:', utilizador, error);
+      console.error('[loadAzureUserData] erro:', error);
     } finally {
       setIsFetchingAzureUser(false);
     }
   };
+
 
   const resetSelections = () => {
     setSelectedTelecom([]);
@@ -528,29 +545,24 @@ const App: React.FC = () => {
           </div>
           
           <div className="flex items-center gap-4 sm:gap-6">
-            {/* Estado de autenticação Microsoft 365 */}
+            {/* Estado de autenticação Microsoft 365 - apenas ícone */}
             {accounts.length === 0 ? (
               <button
                 onClick={() => instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold uppercase transition-colors"
+                className="w-10 h-10 rounded-xl bg-blue-600 hover:bg-blue-700 flex items-center justify-center transition-colors"
                 title="Iniciar sessão Microsoft 365"
               >
-                <LogIn size={14} />
-                <span className="hidden sm:inline">Iniciar sessão M365</span>
-                <span className="sm:hidden">M365</span>
+                <LogIn size={16} />
               </button>
             ) : (
-              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
-                <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
-                <span className="text-[10px] text-emerald-400 font-medium max-w-[140px] truncate hidden sm:block">
-                  {accounts[0]?.username}
-                </span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-2 h-2 rounded-full bg-emerald-400" title={accounts[0]?.username}></div>
                 <button
                   onClick={() => instance.logoutRedirect()}
-                  title="Terminar sessão"
-                  className="ml-1 text-zinc-500 hover:text-red-400 transition-colors"
+                  title={`Terminar sessão (${accounts[0]?.username})`}
+                  className="text-zinc-500 hover:text-red-400 transition-colors"
                 >
-                  <LogOut size={13} />
+                  <LogOut size={14} />
                 </button>
               </div>
             )}
@@ -608,11 +620,10 @@ const App: React.FC = () => {
               <button
                 onClick={handleOpenWithFilePicker}
                 disabled={accounts.length === 0}
-                className="flex items-center gap-2 px-5 py-3 h-12 rounded-xl bg-[#00a4ef] hover:bg-[#0078d4] text-xs font-bold uppercase transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
-                title={accounts.length === 0 ? 'Inicie sessão Microsoft 365 no cabeçalho primeiro' : 'Ligar OneDrive'}
+                className="w-12 h-12 rounded-xl bg-[#00a4ef] hover:bg-[#0078d4] flex items-center justify-center transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                title={accounts.length === 0 ? 'Inicie sessão Microsoft 365 primeiro' : 'Selecionar ficheiro do OneDrive'}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
-                OneDrive
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
               </button>
 
               {excelFile && (

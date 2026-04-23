@@ -8,11 +8,15 @@ export const getAccessToken = async (
   try {
     const response = await instance.acquireTokenSilent({ ...loginRequest, account });
     return response.accessToken;
-  } catch {
-    const response = await instance.acquireTokenPopup({ ...loginRequest, account, redirectUri: appRedirectUri });
-    return response.accessToken;
+  } catch (silentError) {
+    console.warn('[getAccessToken] acquireTokenSilent falhou, a tentar redirect...', silentError);
+    // Fallback: redireciona para login (sem popup, compatível com GitHub Pages)
+    await instance.acquireTokenRedirect({ ...loginRequest, account });
+    // A execução para aqui porque a página navega
+    throw new Error('A redirecionar para obter token...');
   }
 };
+
 
 export interface DriveItem {
   id: string;
