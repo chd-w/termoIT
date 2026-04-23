@@ -711,6 +711,18 @@ const App: React.FC = () => {
                   <div className="text-xs text-zinc-400 max-w-[200px] truncate" title={excelFile?.name}>
                     {excelFile?.name}
                   </div>
+                  {pickedDriveItemId && (
+                    <button
+                      onClick={handleRunPostoTrabalhoScript}
+                      disabled={isRunningScript}
+                      className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                      title="Executar script PostoTrabalho no Excel Online"
+                    >
+                      {isRunningScript
+                        ? <Loader2 size={18} className="animate-spin text-emerald-400" />
+                        : <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-emerald-400"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 22v-2"/><path d="m17 20.66-1-1.73"/><path d="M11 10.27 7 3.34"/><path d="m20.66 17-1.73-1"/><path d="m3.34 7 1.73 1"/><path d="M14 12h8"/><path d="M2 12h2"/><path d="m20.66 7-1.73 1"/><path d="m3.34 17 1.73-1"/><path d="m17 3.34-1 1.73"/><path d="m11 13.73-4 6.93"/></svg>}
+                    </button>
+                  )}
                   <button
                     onClick={() => { if(excelFile) handleExcelUpload(excelFile); resetSelections(); }}
                     className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
@@ -721,29 +733,13 @@ const App: React.FC = () => {
                 </div>
               )}
             </div>
-
-            {/* Bot\u00e3o de script PostoTrabalho - linha separada, vis\u00edvel ap\u00f3s selecionar ficheiro do OneDrive */}
-            {pickedDriveItemId && (
-              <div className="mt-3">
-                <button
-                  onClick={handleRunPostoTrabalhoScript}
-                  disabled={isRunningScript}
-                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-600 text-xs font-bold uppercase transition-colors border border-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                  title="Executar script PostoTrabalho no Excel Online"
-                >
-                  {isRunningScript
-                    ? <><Loader2 size={14} className="animate-spin" /> A executar script...</>
-                    : <><Play size={14} /> PostoTrabalho</>}
-                </button>
-                {scriptMessage && (
-                  <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
-                    scriptMessage.type === 'success'
-                      ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
-                      : 'bg-red-500/10 border border-red-500/30 text-red-400'
-                  }`}>
-                    {scriptMessage.text}
-                  </div>
-                )}
+            {scriptMessage && (
+              <div className={`mt-2 px-4 py-2 rounded-xl text-xs font-medium ${
+                scriptMessage.type === 'success'
+                  ? 'bg-emerald-500/10 border border-emerald-500/30 text-emerald-400'
+                  : 'bg-red-500/10 border border-red-500/30 text-red-400'
+              }`}>
+                {scriptMessage.text}
               </div>
             )}
             
