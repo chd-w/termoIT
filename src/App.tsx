@@ -312,12 +312,13 @@ const App: React.FC = () => {
       const token = await getAccessToken(instance, account);
       const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
       const endpoints = [
-        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/application/scripts/${script.id}/run`,
-        `https://graph.microsoft.com/beta/me/drive/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
+        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${script.name}/run`,
         ...(pickedDriveItemId ? [
-          `https://graph.microsoft.com/beta/me/drive/items/${pickedDriveItemId}/workbook/application/scripts/${script.id}/run`,
+          `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/scripts/${script.id}/run`,
         ] : []),
       ];
+
       let success = false;
       let lastError = '';
       for (const url of endpoints) {

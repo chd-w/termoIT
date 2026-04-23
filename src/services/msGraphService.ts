@@ -234,7 +234,7 @@ export const listOfficeScripts = async (
   itemId: string
 ): Promise<OfficeScript[]> => {
   const res = await fetch(
-    `https://graph.microsoft.com/beta/me/drive/items/${itemId}/workbook/application/scripts`,
+    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/scripts`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   if (!res.ok) {
@@ -244,6 +244,7 @@ export const listOfficeScripts = async (
   const data = await res.json();
   return (data?.value ?? []).map((s: any) => ({ id: s.id, name: s.name }));
 };
+
 
 /**
  * Executa um Office Script pelo nome num workbook do OneDrive.
