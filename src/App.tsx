@@ -723,7 +723,7 @@ const App: React.FC = () => {
                     <button
                       onClick={() => setIsAddRowModalOpen(true)}
                       className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
-                      title="Adicionar registo numa tabela Excel"
+                      title="Adicionar registo numa folha Excel"
                     >
                       <Plus size={18} className="text-violet-400" />
                     </button>

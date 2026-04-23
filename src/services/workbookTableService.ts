@@ -1,124 +1,6 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// Adicionar ao ficheiro: src/services/msGraphService.ts
-// ─────────────────────────────────────────────────────────────────────────────
-//
-// A API do Microsoft Graph permite ler e escrever em tabelas Excel
-// directamente, sem fazer upload do ficheiro inteiro — por isso não
-// há o problema de bloqueio (423) que ocorre com o PUT /content.
-//
-// Requisito: o ficheiro tem de estar no OneDrive for Business (M365).
-// Permissão necessária: Files.ReadWrite (já está no msalConfig.ts).
-//
-// Tabelas existentes no seu workbook (definidas pelo Office Script):
-//   • PostoTrabalho_Normalizada  (folha "Tabela Posto Trabalho")
-//   • Telecom_Normalizada        (folha "Tabela Telecom")
-//   • REP_STOCK_COMBINADOS       (folha "Tabela REP e Stock")
-// ─────────────────────────────────────────────────────────────────────────────
+const GRAPH = 'https://graph.microsoft.com/v1.0';
 
-const GRAPH_BASE = 'https://graph.microsoft.com/v1.0';
-
-// ─── Tipos ───────────────────────────────────────────────────────────────────
-
-export interface WorkbookRow {
-  /** Valores na mesma ordem que as colunas da tabela */
-  values: (string | number | boolean | null)[];
-}
-
-export interface WorkbookTableInfo {
-  id: string;
-  name: string;
-  /** Cabeçalhos das colunas */
-  columns: string[];
-}
-
-// ─── Listar tabelas do workbook ───────────────────────────────────────────────
-
-/**
- * Devolve todas as tabelas existentes num workbook do OneDrive.
- * Útil para confirmar os nomes antes de escrever.
- */
-export const listWorkbookTables = async (
-  token: string,
-  itemId: string
-): Promise<WorkbookTableInfo[]> => {
-  const res = await fetch(
-    `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables?$select=id,name`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Erro ao listar tabelas (${res.status}): ${err}`);
-  }
-  const data = await res.json();
-  const tables: WorkbookTableInfo[] = [];
-
-  for (const t of data.value ?? []) {
-    // Vai buscar os cabeçalhos de cada tabela
-    const colRes = await fetch(
-      `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables/${t.name}/columns?$select=name`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const colData = colRes.ok ? await colRes.json() : { value: [] };
-    tables.push({
-      id: t.id,
-      name: t.name,
-      columns: (colData.value ?? []).map((c: any) => c.name as string),
-    });
-  }
-
-  return tables;
-};
-
-// ─── Ler linhas de uma tabela ─────────────────────────────────────────────────
-
-/**
- * Lê todas as linhas de uma tabela Excel (sem cabeçalho).
- * Devolve um array de objectos { coluna: valor }.
- */
-export const getTableRows = async (
-  token: string,
-  itemId: string,
-  tableName: string
-): Promise<Record<string, string | number | boolean | null>[]> => {
-  // Primeiro obtemos os cabeçalhos
-  const colRes = await fetch(
-    `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables/${tableName}/columns?$select=name`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!colRes.ok) throw new Error(`Erro ao obter colunas (${colRes.status})`);
-  const colData = await colRes.json();
-  const columns: string[] = (colData.value ?? []).map((c: any) => c.name as string);
-
-  // Depois as linhas
-  const rowRes = await fetch(
-    `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables/${tableName}/rows`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  if (!rowRes.ok) throw new Error(`Erro ao obter linhas (${rowRes.status})`);
-  const rowData = await rowRes.json();
-
-  return (rowData.value ?? []).map((r: any) => {
-    const values: (string | number | boolean | null)[] = r.values[0];
-    const obj: Record<string, string | number | boolean | null> = {};
-    columns.forEach((col, i) => { obj[col] = values[i] ?? null; });
-    return obj;
-  });
-};
-
-// ─── Adicionar uma linha ──────────────────────────────────────────────────────
-
-/**
- * Adiciona UMA linha no fim de uma tabela Excel no OneDrive.
- *
- * @param token     - access token com Files.ReadWrite
- * @param itemId    - ID do ficheiro no OneDrive
- * @param tableName - nome da tabela (ex: "PostoTrabalho_Normalizada")
- * @param values    - valores na mesma ordem das colunas da tabela
- *
- * Exemplo:
- *   await addRowToTable(token, itemId, 'PostoTrabalho_Normalizada',
- *     ['joao.silva', 'PC-001', 'SN123456', 'Desktop', '', '']);
- */
+// Helper base: adicionar linhas a uma tabela Excel formatada
 export const addRowToTable = async (
   token: string,
   itemId: string,
@@ -126,130 +8,236 @@ export const addRowToTable = async (
   values: (string | number | boolean | null)[]
 ): Promise<void> => {
   const res = await fetch(
-    `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables/${tableName}/rows/add`,
+    `${GRAPH}/me/drive/items/${itemId}/workbook/tables/${tableName}/rows/add`,
     {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      // A API espera { values: [[linha1], [linha2], ...] }
-      // Para uma linha: { values: [[v1, v2, v3]] }
       body: JSON.stringify({ values: [values] }),
     }
   );
-
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Erro ao adicionar linha (${res.status}): ${err}`);
   }
 };
 
-// ─── Adicionar múltiplas linhas de uma vez ────────────────────────────────────
-
-/**
- * Adiciona VÁRIAS linhas de uma vez (mais eficiente que chamar addRowToTable em loop).
- *
- * @param rows - array de arrays de valores, um por linha
- */
-export const addRowsToTable = async (
+// Helper base: obter numero de linhas usadas numa worksheet
+const getUsedRowCount = async (
   token: string,
   itemId: string,
-  tableName: string,
-  rows: (string | number | boolean | null)[][]
+  sheetName: string
+): Promise<number> => {
+  const encoded = encodeURIComponent(sheetName);
+  const res = await fetch(
+    `${GRAPH}/me/drive/items/${itemId}/workbook/worksheets/${encoded}/usedRange?$select=rowCount`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`Erro ao obter usedRange (${res.status})`);
+  const data = await res.json();
+  return data.rowCount ?? 1;
+};
+
+// Helper base: escrever uma linha numa worksheet por indice de linha
+const writeRowToSheet = async (
+  token: string,
+  itemId: string,
+  sheetName: string,
+  rowIndex: number,
+  values: (string | number | null)[]
 ): Promise<void> => {
-  if (rows.length === 0) return;
+  const encoded = encodeURIComponent(sheetName);
+  const colLetter = (n: number) => {
+    let s = '';
+    let x = n + 1;
+    while (x > 0) {
+      s = String.fromCharCode(64 + (x % 26 || 26)) + s;
+      x = Math.floor((x - 1) / 26);
+    }
+    return s;
+  };
+  const startCell = `A${rowIndex + 1}`;
+  const endCell = `${colLetter(values.length - 1)}${rowIndex + 1}`;
+  const address = `${startCell}:${endCell}`;
 
   const res = await fetch(
-    `${GRAPH_BASE}/me/drive/items/${itemId}/workbook/tables/${tableName}/rows/add`,
+    `${GRAPH}/me/drive/items/${itemId}/workbook/worksheets/${encoded}/range(address='${address}')`,
     {
-      method: 'POST',
+      method: 'PATCH',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ values: rows }),
+      body: JSON.stringify({ values: [values] }),
     }
   );
-
   if (!res.ok) {
     const err = await res.text();
-    throw new Error(`Erro ao adicionar linhas (${res.status}): ${err}`);
+    throw new Error(`Erro ao escrever na folha (${res.status}): ${err}`);
   }
 };
 
-// ─── Helpers tipados para as suas tabelas específicas ────────────────────────
-
-/**
- * Colunas: Utilizadores | Hostname | S/N | Tipo | Monitor | S/N do Monitor
- */
-export const addPostoTrabalhoRow = (
+// POSTO DE TRABALHO -> escreve em "Postos de Trabalho Historico"
+export const addPostoTrabalhoRow = async (
   token: string,
   itemId: string,
   row: {
     utilizadores: string;
     hostname: string;
-    sn: string;
+    localizacao?: string;
+    marca?: string;
+    modelo?: string;
+    numeroSerie: string;
     tipo: string;
     monitor?: string;
     snMonitor?: string;
+    dataAtribuicao?: string;
+    empresaFacturada?: string;
+    status?: string;
   }
-) =>
-  addRowToTable(token, itemId, 'PostoTrabalho_Normalizada', [
+): Promise<void> => {
+  const rowCount = await getUsedRowCount(token, itemId, 'Postos de Trabalho Historico');
+
+  const values: (string | number | null)[] = [
     row.utilizadores,
     row.hostname,
-    row.sn.toUpperCase(),
+    row.localizacao ?? null,
+    null,
+    row.hostname,
+    null,
+    null,
+    row.marca ?? null,
+    row.modelo ?? null,
+    row.numeroSerie.toUpperCase(),
     row.tipo,
-    row.monitor ?? '',
-    row.snMonitor ?? '',
-  ]);
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    row.monitor ?? null,
+    row.snMonitor ?? null,
+    row.dataAtribuicao ?? null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    row.empresaFacturada ?? null,
+    null,
+    null,
+    null,
+    null,
+    row.status ?? 'OK',
+  ];
 
-/**
- * Colunas: Utilizador | Número | Marca | Modelo | Número Série | ICCID
- */
-export const addTelecomRow = (
+  await writeRowToSheet(token, itemId, 'Postos de Trabalho Historico', rowCount, values);
+};
+
+// TELECOM -> escreve em "Telecomunicacoes - Em Curso"
+export const addTelecomRow = async (
   token: string,
   itemId: string,
   row: {
-    utilizador: string;
+    nome: string;
     numero: string;
     marca: string;
     modelo: string;
     numeroSerie: string;
     iccid?: string;
+    status?: string;
   }
-) =>
-  addRowToTable(token, itemId, 'Telecom_Normalizada', [
-    row.utilizador,
-    row.numero,
-    row.marca,
-    row.modelo,
-    row.numeroSerie,
-    row.iccid ?? '',
-  ]);
+): Promise<void> => {
+  const rowCount = await getUsedRowCount(token, itemId, 'Telecomunicações - Em Curso');
 
-/**
- * Colunas: Utilizador_Chave | Marca | Modelo | N_Serie | Tipo | Referencia | Origem_Tabela
- */
-export const addRepStockRow = (
+  const values: (string | number | null)[] = Array(51).fill(null);
+  values[1] = row.nome;
+  values[4] = row.numero;
+  values[5] = row.marca;
+  values[6] = row.modelo;
+  values[9] = row.numeroSerie.toUpperCase();
+  values[12] = row.iccid ?? null;
+  values[31] = row.status ?? 'OK';
+
+  await writeRowToSheet(token, itemId, 'Telecomunicações - Em Curso', rowCount, values);
+};
+
+// REP -> escreve em "REP"
+export const addRepRow = async (
   token: string,
   itemId: string,
   row: {
-    utilizadorChave: string;
-    marca: string;
-    modelo: string;
-    nSerie: string;
-    tipo: string;
-    referencia?: string;
-    origem: 'REP' | 'Stock';
+    name: string;
+    marca?: string;
+    modelo?: string;
+    sn?: string;
+    tipo?: string;
+    ref?: string;
+    company?: string;
+    status?: string;
   }
-) =>
-  addRowToTable(token, itemId, 'REP_STOCK_COMBINADOS', [
-    row.utilizadorChave,
-    row.marca,
-    row.modelo,
-    row.nSerie.toUpperCase(),
-    row.tipo,
-    row.referencia ?? '',
-    row.origem,
-  ]);
+): Promise<void> => {
+  const rowCount = await getUsedRowCount(token, itemId, 'REP');
+
+  const values: (string | number | null)[] = [
+    null,
+    row.marca ?? null,
+    row.modelo ?? null,
+    row.sn ? row.sn.toUpperCase() : null,
+    row.tipo ?? 'Periféricos',
+    row.ref ?? null,
+    row.name,
+    row.company ?? null,
+    null,
+    null,
+    null,
+    row.status ?? 'OK',
+  ];
+
+  await writeRowToSheet(token, itemId, 'REP', rowCount, values);
+};
+
+// STOCK -> escreve em "Stock"
+export const addStockRow = async (
+  token: string,
+  itemId: string,
+  row: {
+    deviceName: string;
+    vendor?: string;
+    model?: string;
+    serial: string;
+    assetType?: string;
+    siteName?: string;
+    user?: string;
+    status?: string;
+  }
+): Promise<void> => {
+  const rowCount = await getUsedRowCount(token, itemId, 'Stock');
+
+  const values: (string | number | null)[] = [
+    row.deviceName,
+    row.vendor ?? null,
+    row.model ?? null,
+    row.serial.toUpperCase(),
+    null,
+    null,
+    row.assetType ?? null,
+    row.siteName ?? null,
+    null,
+    row.status ?? 'IN USE',
+    row.user ?? null,
+    null,
+    'OK',
+  ];
+
+  await writeRowToSheet(token, itemId, 'Stock', rowCount, values);
+};
