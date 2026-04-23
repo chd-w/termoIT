@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check
+  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut
 } from 'lucide-react';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
 import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
@@ -143,21 +143,10 @@ const App: React.FC = () => {
   };
 
   const ensureMicrosoft365Login = async () => {
-    let account = instance.getActiveAccount() ?? accounts[0];
+    const account = instance.getActiveAccount() ?? accounts[0];
     if (account) return account;
-
-    const resumed = await tryResumeSsoSession();
-    if (resumed) {
-      account = instance.getActiveAccount() ?? accounts[0];
-      if (account) return account;
-    }
-
-    await instance.loginRedirect({
-      ...loginRequest,
-      prompt: 'select_account',
-    });
-    // Execução para aqui porque a página redireciona. 
-    // O utilizador terá de clicar de novo quando voltar (já autenticado).
+    // Não está logado — inicia redirect. A página irá navegar.
+    await instance.loginRedirect({ ...loginRequest, prompt: 'select_account' });
     return undefined;
   };
 
@@ -519,34 +508,64 @@ const App: React.FC = () => {
             </div>
           </div>
           
-          <div className="flex items-center gap-2 sm:gap-4 md:gap-8">
-            <div className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${activeTab === 'upload' && !excelFile ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
-                {excelFile ? <Check size={12} /> : '1'}
+          <div className="flex items-center gap-4 sm:gap-6">
+            {/* Estado de autenticação Microsoft 365 */}
+            {accounts.length === 0 ? (
+              <button
+                onClick={() => instance.loginRedirect({ ...loginRequest, prompt: 'select_account' })}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-xs font-bold uppercase transition-colors"
+                title="Iniciar sessão Microsoft 365"
+              >
+                <LogIn size={14} />
+                <span className="hidden sm:inline">Iniciar sessão M365</span>
+                <span className="sm:hidden">M365</span>
+              </button>
+            ) : (
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                <div className="w-2 h-2 rounded-full bg-emerald-400"></div>
+                <span className="text-[10px] text-emerald-400 font-medium max-w-[140px] truncate hidden sm:block">
+                  {accounts[0]?.username}
+                </span>
+                <button
+                  onClick={() => instance.logoutRedirect()}
+                  title="Terminar sessão"
+                  className="ml-1 text-zinc-500 hover:text-red-400 transition-colors"
+                >
+                  <LogOut size={13} />
+                </button>
               </div>
-              <span className={`text-[10px] font-bold uppercase hidden md:block ${activeTab === 'upload' && !excelFile ? 'text-indigo-400' : 'text-emerald-400'}`}>Ficheiro</span>
-            </div>
-            
-            <div className="w-4 sm:w-10 h-0.5 bg-zinc-800">
-              <div className={`h-full ${excelFile ? 'bg-emerald-500' : ''}`}></div>
-            </div>
+            )}
 
-            <div className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${activeTab === 'upload' && excelFile ? 'bg-indigo-600 text-white' : activeTab === 'form' ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
-                {activeTab === 'form' ? <Check size={12} /> : '2'}
+            {/* Steps */}
+            <div className="flex items-center gap-2 sm:gap-4">
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${activeTab === 'upload' && !excelFile ? 'bg-indigo-600 text-white' : 'bg-emerald-500 text-white'}`}>
+                  {excelFile ? <Check size={12} /> : '1'}
+                </div>
+                <span className={`text-[10px] font-bold uppercase hidden md:block ${activeTab === 'upload' && !excelFile ? 'text-indigo-400' : 'text-emerald-400'}`}>Ficheiro</span>
               </div>
-              <span className={`text-[10px] font-bold uppercase hidden md:block ${activeTab === 'upload' && excelFile ? 'text-indigo-400' : activeTab === 'form' ? 'text-emerald-400' : 'text-zinc-600'}`}>Seleção</span>
-            </div>
-
-            <div className="w-4 sm:w-10 h-0.5 bg-zinc-800">
-              <div className={`h-full ${activeTab === 'form' ? 'bg-emerald-500' : ''}`}></div>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${previewOpen ? 'bg-emerald-500 text-white' : activeTab === 'form' && selectedTechnician ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
-                {previewOpen ? <Check size={12} /> : '3'}
+              
+              <div className="w-4 sm:w-10 h-0.5 bg-zinc-800">
+                <div className={`h-full ${excelFile ? 'bg-emerald-500' : ''}`}></div>
               </div>
-              <span className={`text-[10px] font-bold uppercase hidden md:block ${previewOpen ? 'text-emerald-400' : activeTab === 'form' && selectedTechnician ? 'text-indigo-400' : 'text-zinc-600'}`}>Gerar</span>
+
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${activeTab === 'upload' && excelFile ? 'bg-indigo-600 text-white' : activeTab === 'form' ? 'bg-emerald-500 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
+                  {activeTab === 'form' ? <Check size={12} /> : '2'}
+                </div>
+                <span className={`text-[10px] font-bold uppercase hidden md:block ${activeTab === 'upload' && excelFile ? 'text-indigo-400' : activeTab === 'form' ? 'text-emerald-400' : 'text-zinc-600'}`}>Seleção</span>
+              </div>
+
+              <div className="w-4 sm:w-10 h-0.5 bg-zinc-800">
+                <div className={`h-full ${activeTab === 'form' ? 'bg-emerald-500' : ''}`}></div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${previewOpen ? 'bg-emerald-500 text-white' : activeTab === 'form' && selectedTechnician ? 'bg-indigo-600 text-white' : 'bg-zinc-800 text-zinc-500'}`}>
+                  {previewOpen ? <Check size={12} /> : '3'}
+                </div>
+                <span className={`text-[10px] font-bold uppercase hidden md:block ${previewOpen ? 'text-emerald-400' : activeTab === 'form' && selectedTechnician ? 'text-indigo-400' : 'text-zinc-600'}`}>Gerar</span>
+              </div>
             </div>
           </div>
         </div>
@@ -569,8 +588,9 @@ const App: React.FC = () => {
 
               <button
                 onClick={handleOpenWithFilePicker}
-                className="flex items-center gap-2 px-5 py-3 h-12 rounded-xl bg-[#00a4ef] hover:bg-[#0078d4] text-xs font-bold uppercase transition-colors shadow-lg"
-                title="Ligar OneDrive"
+                disabled={accounts.length === 0}
+                className="flex items-center gap-2 px-5 py-3 h-12 rounded-xl bg-[#00a4ef] hover:bg-[#0078d4] text-xs font-bold uppercase transition-colors shadow-lg disabled:opacity-40 disabled:cursor-not-allowed"
+                title={accounts.length === 0 ? 'Inicie sessão Microsoft 365 no cabeçalho primeiro' : 'Ligar OneDrive'}
               >
                 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96z"/></svg>
                 OneDrive
