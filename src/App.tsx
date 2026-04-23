@@ -280,16 +280,22 @@ const App: React.FC = () => {
     setAvailableScripts([]);
     try {
       const token = await getAccessToken(instance, account);
-      // Tenta com o file ID fornecido e com o picker ID
       const FILE_ID = '10B0F902-D181-46AB-B4D9-850B3F1A6A99';
+      const FILE_PATH = 'Documentos/Asset/DeskSide-Posto%20de%20Trabalho.xlsx';
+      const BASE = 'https://graph.microsoft.com/v1.0/me/drive';
       let scripts: OfficeScript[] = [];
-      try { scripts = await listOfficeScripts(token, FILE_ID); } catch {}
-      if (scripts.length === 0 && pickedDriveItemId) {
-        try { scripts = await listOfficeScripts(token, pickedDriveItemId); } catch {}
-      }
+      // 1. Tenta pelo path do ficheiro (mais fiável)
+      try {
+        const res = await fetch(`${BASE}/root:/${FILE_PATH}:/workbook/scripts`, { headers: { Authorization: `Bearer ${token}` } });
+        if (res.ok) { const d = await res.json(); scripts = (d?.value ?? []).map((s: any) => ({ id: s.id, name: s.name })); }
+      } catch {}
+      // 2. Fallback pelo ID
+      if (scripts.length === 0) { try { scripts = await listOfficeScripts(token, FILE_ID); } catch {} }
+      // 3. Fallback pelo picker ID
+      if (scripts.length === 0 && pickedDriveItemId) { try { scripts = await listOfficeScripts(token, pickedDriveItemId); } catch {} }
       setAvailableScripts(scripts);
       if (scripts.length === 0) {
-        setScriptMessage({ type: 'error', text: 'Nenhum script encontrado neste workbook. Verifique a permiss\u00e3o Files.ReadWrite.' });
+        setScriptMessage({ type: 'error', text: 'Nenhum script encontrado. Verifique a permiss\u00e3o Files.ReadWrite e que o ficheiro tem scripts.' });
         setShowScriptPicker(false);
       }
     } catch (err: any) {
@@ -311,11 +317,18 @@ const App: React.FC = () => {
     try {
       const token = await getAccessToken(instance, account);
       const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+      const FILE_PATH = 'Documentos/Asset/DeskSide-Posto%20de%20Trabalho.xlsx';
+      const BASE = 'https://graph.microsoft.com/v1.0/me/drive';
       const endpoints = [
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
-        `https://graph.microsoft.com/v1.0/me/drive/items/${FILE_ID}/workbook/scripts/${script.name}/run`,
+        // 1. Pelo path (mais fiável)
+        `${BASE}/root:/${FILE_PATH}:/workbook/scripts/${script.id}/run`,
+        `${BASE}/root:/${FILE_PATH}:/workbook/scripts/${script.name}/run`,
+        // 2. Pelo ID
+        `${BASE}/items/${FILE_ID}/workbook/scripts/${script.id}/run`,
+        `${BASE}/items/${FILE_ID}/workbook/scripts/${script.name}/run`,
+        // 3. Pelo picker ID
         ...(pickedDriveItemId ? [
-          `https://graph.microsoft.com/v1.0/me/drive/items/${pickedDriveItemId}/workbook/scripts/${script.id}/run`,
+          `${BASE}/items/${pickedDriveItemId}/workbook/scripts/${script.id}/run`,
         ] : []),
       ];
 
