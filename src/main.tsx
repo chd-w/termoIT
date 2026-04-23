@@ -6,35 +6,43 @@ import { msalConfig } from './config/msalConfig'
 import App from './App.tsx'
 import './index.css'
 
+// Log do URL actual para diagnóstico (remove em produção)
+console.log('[MSAL-DEBUG] URL actual:', window.location.href)
+console.log('[MSAL-DEBUG] hash:', window.location.hash)
+console.log('[MSAL-DEBUG] search:', window.location.search)
+console.log('[MSAL-DEBUG] cacheLocation:', msalConfig.cache?.cacheLocation)
+
 const msalInstance = new PublicClientApplication(msalConfig)
 const root = ReactDOM.createRoot(document.getElementById('root')!)
 
 msalInstance
   .initialize()
   .then(() => {
-    // CRITICAL: processar o redirect de login ANTES de fazer render.
-    // Sem isto, o código de autenticação no URL é ignorado e a sessão perde-se.
+    console.log('[MSAL-DEBUG] initialize OK')
+    const accountsBefore = msalInstance.getAllAccounts()
+    console.log('[MSAL-DEBUG] contas antes do handleRedirectPromise:', accountsBefore.map(a => a.username))
     return msalInstance.handleRedirectPromise()
   })
   .then((response) => {
+    console.log('[MSAL-DEBUG] handleRedirectPromise response:', response)
     if (response?.account) {
-      // Veio de um redirect de login bem-sucedido
-      console.log('[MSAL] Login via redirect OK:', response.account.username)
+      console.log('[MSAL-DEBUG] ✅ Login via redirect OK:', response.account.username)
       msalInstance.setActiveAccount(response.account)
     } else {
-      // Restaurar sessão em cache (visitas seguintes)
       const cached = msalInstance.getAllAccounts()
-      console.log('[MSAL] Contas em cache:', cached.map(a => a.username))
+      console.log('[MSAL-DEBUG] Contas em cache após redirect:', cached.map(a => a.username))
       if (cached.length > 0 && !msalInstance.getActiveAccount()) {
         msalInstance.setActiveAccount(cached[0])
+        console.log('[MSAL-DEBUG] Conta restaurada do cache:', cached[0].username)
       }
     }
 
-    // Ouvir logins futuros
     msalInstance.addEventCallback((event: EventMessage) => {
+      console.log('[MSAL-DEBUG] evento:', event.eventType)
       if (event.eventType === EventType.LOGIN_SUCCESS && event.payload) {
         const payload = event.payload as AuthenticationResult
         if (payload.account) {
+          console.log('[MSAL-DEBUG] LOGIN_SUCCESS:', payload.account.username)
           msalInstance.setActiveAccount(payload.account)
         }
       }
@@ -49,8 +57,7 @@ msalInstance
     )
   })
   .catch((error) => {
-    // Nunca deixar a app em branco — renderizar mesmo com erro
-    console.error('[MSAL] Erro na inicialização:', error)
+    console.error('[MSAL-DEBUG] ❌ Erro:', error?.errorCode, error?.message, error)
     root.render(
       <React.StrictMode>
         <MsalProvider instance={msalInstance}>
