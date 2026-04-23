@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>A autenticar...</title>
+    <style>
+      body {
+        margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: #18181b;
+        color: #a1a1aa;
+        font-family: Arial, sans-serif;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <p>A processar autenticação, por favor aguarde...</p>
+    <!--
+      Vite compila este entry point separadamente.
+      O script inicializa o MSAL, deteta que está num popup,
+      envia postMessage ao parent e fecha o popup automaticamente.
+    -->
+    <script type="module" src="/src/auth-redirect.ts"></script>
+  </body>
+</html>
