@@ -206,8 +206,9 @@ const App: React.FC = () => {
         nomeColaborador: azureUser.displayName ? toTitleCase(azureUser.displayName) : prev.nomeColaborador,
         email: azureUser.mail || azureUser.userPrincipalName || prev.email,
         funcao: azureUser.jobTitle || prev.funcao,
+        empresa: azureUser.companyName || prev.empresa,
       }));
-      console.log('[loadAzureUserData] dados preenchidos:', azureUser.displayName);
+      console.log('[loadAzureUserData] dados preenchidos:', azureUser.displayName, '| cargo:', azureUser.jobTitle, '| empresa:', azureUser.companyName);
     } catch (error) {
       console.error('[loadAzureUserData] erro:', error);
     } finally {
@@ -248,12 +249,13 @@ const App: React.FC = () => {
     }, 350);
   };
 
-  const handleSelectUserFromDropdown = (user: { displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string }) => {
+  const handleSelectUserFromDropdown = (user: { displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string; companyName?: string }) => {
     setFormData(prev => ({
       ...prev,
       nomeColaborador: user.displayName ? toTitleCase(user.displayName) : prev.nomeColaborador,
       email: user.mail || user.userPrincipalName || prev.email,
       funcao: user.jobTitle || prev.funcao,
+      empresa: user.companyName || prev.empresa,
     }));
     setShowUserDropdown(false);
     setUserSearchResults([]);

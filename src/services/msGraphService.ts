@@ -67,7 +67,9 @@ export interface AzureUserProfile {
   mail?: string;
   userPrincipalName?: string;
   jobTitle?: string;
+  companyName?: string;
 }
+
 
 const escapeODataValue = (value: string): string => value.replace(/'/g, "''");
 
@@ -81,7 +83,7 @@ export const searchUserByUtilizador = async (
 
   const url = new URL('https://graph.microsoft.com/v1.0/users');
   url.searchParams.set('$top', '1');
-  url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+  url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle,companyName');
   url.searchParams.set(
     '$filter',
     `userPrincipalName eq '${sanitized}' or mailNickname eq '${sanitized}' or mail eq '${sanitized}' or displayName eq '${sanitized}'`
@@ -106,7 +108,7 @@ export const searchUserByUtilizador = async (
   if (!user && !originalValue.includes('@')) {
     const fallbackUrl = new URL('https://graph.microsoft.com/v1.0/users');
     fallbackUrl.searchParams.set('$top', '1');
-    fallbackUrl.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+    fallbackUrl.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle,companyName');
     fallbackUrl.searchParams.set(
       '$filter',
       `startswith(userPrincipalName,'${sanitized}@') or startswith(mail,'${sanitized}@')`
@@ -135,8 +137,10 @@ export const searchUserByUtilizador = async (
     mail: user.mail,
     userPrincipalName: user.userPrincipalName,
     jobTitle: user.jobTitle,
+    companyName: user.companyName,
   };
 };
+
 
 /**
  * Pesquisa utilizadores no Azure AD por displayName (para autocomplete).
@@ -154,7 +158,7 @@ export const searchUsersByDisplayName = async (
   try {
     const url = new URL('https://graph.microsoft.com/v1.0/users');
     url.searchParams.set('$top', '10');
-    url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle');
+    url.searchParams.set('$select', 'displayName,mail,userPrincipalName,jobTitle,companyName');
     url.searchParams.set('$search', `"displayName:${trimmed}"`);
     url.searchParams.set('$orderby', 'displayName');
 
@@ -172,6 +176,7 @@ export const searchUsersByDisplayName = async (
         mail: u.mail,
         userPrincipalName: u.userPrincipalName,
         jobTitle: u.jobTitle,
+        companyName: u.companyName,
       }));
       if (results.length > 0) return results;
     } else {
@@ -185,7 +190,7 @@ export const searchUsersByDisplayName = async (
   try {
     const url2 = new URL('https://graph.microsoft.com/v1.0/me/people');
     url2.searchParams.set('$top', '10');
-    url2.searchParams.set('$select', 'displayName,scoredEmailAddresses,jobTitle,userPrincipalName');
+    url2.searchParams.set('$select', 'displayName,scoredEmailAddresses,jobTitle,userPrincipalName,companyName');
     url2.searchParams.set('$search', trimmed);
 
     const res2 = await fetch(url2.toString(), {
@@ -194,7 +199,6 @@ export const searchUsersByDisplayName = async (
 
     if (res2.ok) {
       const data2 = await res2.json();
-      // Filtrar manualmente pelo nome para corresponder ao que foi escrito
       return (data2?.value ?? [])
         .filter((u: any) =>
           u.displayName?.toLowerCase().includes(trimmed.toLowerCase())
@@ -204,6 +208,7 @@ export const searchUsersByDisplayName = async (
           mail: u.scoredEmailAddresses?.[0]?.address ?? u.userPrincipalName,
           userPrincipalName: u.userPrincipalName,
           jobTitle: u.jobTitle,
+          companyName: u.companyName,
         }));
     }
   } catch {
