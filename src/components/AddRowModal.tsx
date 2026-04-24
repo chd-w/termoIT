@@ -104,11 +104,12 @@ const TABLES: TableDef[] = [
 
 interface AddRowModalProps {
   itemId: string;
+  driveId?: string | null;
   onClose: () => void;
   onSuccess?: (tableId: TableId) => void;
 }
 
-const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, onClose, onSuccess }) => {
+const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, driveId, onClose, onSuccess }) => {
   const { instance, accounts } = useMsal();
 
   const [selectedTable, setSelectedTable] = useState<TableDef>(TABLES[0]);
@@ -159,7 +160,7 @@ const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, onClose, onSuccess })
       const v = values;
 
       if (selectedTable.id === 'posto') {
-        await addPostoTrabalhoRow(token, itemId, {
+        await addPostoTrabalhoRow(token, itemId, driveId, {
           utilizadores: v.utilizadores,
           hostname: v.hostname,
           numeroSerie: v.numeroSerie,
@@ -172,7 +173,7 @@ const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, onClose, onSuccess })
           empresaFacturada: v.empresaFacturada,
         });
       } else if (selectedTable.id === 'telecom') {
-        await addTelecomRow(token, itemId, {
+        await addTelecomRow(token, itemId, driveId, {
           nome: v.nome,
           numero: v.numero,
           marca: v.marca,
@@ -181,7 +182,7 @@ const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, onClose, onSuccess })
           iccid: v.iccid,
         });
       } else if (selectedTable.id === 'rep') {
-        await addRepRow(token, itemId, {
+        await addRepRow(token, itemId, driveId, {
           name: v.name,
           marca: v.marca,
           modelo: v.modelo,
@@ -191,7 +192,7 @@ const AddRowModal: React.FC<AddRowModalProps> = ({ itemId, onClose, onSuccess })
           company: v.company,
         });
       } else if (selectedTable.id === 'stock') {
-        await addStockRow(token, itemId, {
+        await addStockRow(token, itemId, driveId, {
           deviceName: v.deviceName,
           serial: v.serial,
           vendor: v.vendor,
