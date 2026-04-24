@@ -287,7 +287,7 @@ const App: React.FC = () => {
         const account = instance.getActiveAccount() ?? accounts[0];
         if (!account) { alert('Inicie sess\u00e3o Microsoft 365 primeiro.'); return; }
         const token = await getAccessToken(instance, account);
-        const buffer = await downloadDriveItem(token, pickedDriveItemId);
+        const buffer = await downloadDriveItem(token, pickedDriveItemId, pickedDriveId ?? undefined);
         const fileName = pickedFileName || excelFile?.name || 'ficheiro-onedrive.xlsx';
         const freshFile = new File([buffer], fileName, {
           type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -328,8 +328,8 @@ const App: React.FC = () => {
       }
 
       const token = await getAccessToken(instance, account);
-      const buffer = await downloadDriveItem(token, pickedDriveItemId);
-      const result = await normalizeAndUploadToOneDrive(buffer, pickedDriveItemId, token);
+      const buffer = await downloadDriveItem(token, pickedDriveItemId, pickedDriveId ?? undefined);
+      const result = await normalizeAndUploadToOneDrive(buffer, pickedDriveItemId, token, pickedDriveId ?? undefined);
       setNormalizerStatus({ type: 'success', summary: result.summary });
       await handleRefreshFile();
     } catch (err: any) {
@@ -356,24 +356,6 @@ const App: React.FC = () => {
       console.error('Erro ao carregar ficheiro do OneDrive:', error);
       alert('Não foi possível carregar o ficheiro do OneDrive.');
     }
-  };
-
-  const handleLocalFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        setExcelFile(file); 
-        setPickedDriveItemId(undefined);
-        setPickedDriveId(null);
-        setPickedFileName(file.name);
-        handleExcelUpload(file); 
-        resetSelections();
-      } else {
-        alert('Por favor, selecione um arquivo Excel (.xlsx ou .xls)');
-      }
-    }
-    // limpa o input para permitir selecionar o mesmo arquivo novamente se necessário
-    event.target.value = '';
   };
 
   const handleExcelUpload = async (file: File) => {

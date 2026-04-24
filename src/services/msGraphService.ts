@@ -23,6 +23,8 @@ export interface DriveItem {
   file?: { mimeType: string };
   size?: number;
   lastModifiedDateTime?: string;
+  driveId?: string;
+  parentPath?: string;
 }
 
 export const listDriveItems = async (
@@ -35,11 +37,20 @@ export const listDriveItems = async (
     : `${base}/root/children`;
 
   const res = await fetch(
-    `${url}?$select=id,name,file,folder,size,lastModifiedDateTime&$orderby=name&$top=200`,
+    `${url}?$select=id,name,file,folder,size,lastModifiedDateTime,parentReference&$orderby=name&$top=200`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
-  return data.value ?? [];
+  return (data.value ?? []).map((item: any) => ({
+    id: item.id,
+    name: item.name,
+    folder: item.folder,
+    file: item.file,
+    size: item.size,
+    lastModifiedDateTime: item.lastModifiedDateTime,
+    driveId: item.parentReference?.driveId,
+    parentPath: item.parentReference?.path,
+  }));
 };
 
 export const downloadDriveItem = async (
@@ -327,6 +338,15 @@ export interface SharedDriveItem extends DriveItem {
   remoteItemId?: string;
 }
 
+const extractFolderNameFromPath = (path?: string): string | undefined => {
+  if (!path) return undefined;
+  const normalized = path.replace(/\\/g, '/');
+  const withoutRoot = normalized.replace(/^\/drives\/[^/]+\/root:?\/?/, '');
+  const parts = withoutRoot.split('/').filter(Boolean);
+  if (parts.length === 0) return undefined;
+  return parts[parts.length - 1];
+};
+
 /**
  * Lista ficheiros e pastas partilhados com o utilizador.
  * Requer: Files.Read.All ou Sites.Read.All
@@ -345,12 +365,13 @@ export const listSharedWithMe = async (
 
   return (data.value ?? []).map((item: any) => ({
     id: item.remoteItem?.id ?? item.id,
-    name: item.name,
+    name: item.remoteItem?.name ?? item.name,
     file: item.remoteItem?.file ?? item.file,
     folder: item.remoteItem?.folder ?? item.folder,
     size: item.remoteItem?.size ?? item.size,
     lastModifiedDateTime: item.remoteItem?.lastModifiedDateTime ?? item.lastModifiedDateTime,
     driveId: item.remoteItem?.parentReference?.driveId,
+    parentPath: extractFolderNameFromPath(item.remoteItem?.parentReference?.path),
     remoteItemId: item.remoteItem?.id,
   }));
 };
@@ -377,6 +398,7 @@ export const listSharedFolderChildren = async (
   return (data.value ?? []).map((item: any) => ({
     ...item,
     driveId,
+    parentPath: item.parentReference?.path,
   }));
 };
 

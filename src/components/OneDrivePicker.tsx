@@ -238,7 +238,7 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                     const isDown = downloading === item.id;
 
                     return (
-                      <div key={item.id}
+                      <div key={`${item.driveId ?? 'me'}:${item.id}`}
                         onClick={() => isFolder ? navigateInto(item) : handlePick(item)}
                         className={`flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors
                           ${isPicked ? 'bg-emerald-900/20 border-l-2 border-emerald-500' : 'hover:bg-zinc-800/40'}`}>
@@ -250,7 +250,12 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium truncate ${isPicked ? 'text-emerald-400' : ''}`}>{item.name}</p>
-                          {!isFolder && <p className="text-[10px] text-zinc-500 mt-0.5">{formatSize(item.size)}</p>}
+                          {!isFolder && (
+                            <p className="text-[10px] text-zinc-500 mt-0.5">
+                              {formatSize(item.size)}
+                              {tab === 'shared' && item.parentPath ? ` • Pasta: ${item.parentPath}` : ''}
+                            </p>
+                          )}
                         </div>
                         {isPicked && (
                           <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2 py-1 rounded-lg">Selecionado</span>

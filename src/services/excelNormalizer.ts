@@ -280,14 +280,19 @@ export function normalizeExcelWorkbook(buffer: ArrayBuffer): NormalizeResult {
 export async function normalizeAndUploadToOneDrive(
   buffer: ArrayBuffer,
   itemId: string,
-  token: string
+  token: string,
+  driveId?: string
 ): Promise<NormalizeResult> {
   // 1. Normalizar
   const result = normalizeExcelWorkbook(buffer);
 
+  const uploadUrl = driveId
+    ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/content`
+    : `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/content`;
+
   // 2. Upload de volta ao OneDrive (substitui o ficheiro original)
   const uploadRes = await fetch(
-    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/content`,
+    uploadUrl,
     {
       method: 'PUT',
       headers: {
