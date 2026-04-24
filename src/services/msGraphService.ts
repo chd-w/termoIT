@@ -10,9 +10,7 @@ export const getAccessToken = async (
     return response.accessToken;
   } catch (silentError) {
     console.warn('[getAccessToken] acquireTokenSilent falhou, a tentar redirect...', silentError);
-    // Fallback: redireciona para login (sem popup, compatível com GitHub Pages)
     await instance.acquireTokenRedirect({ ...loginRequest, account });
-    // A execução para aqui porque a página navega
     throw new Error('A redirecionar para obter token...');
   }
 };
@@ -104,7 +102,6 @@ export const searchUserByUtilizador = async (
   const data = await res.json();
   let user = data?.value?.[0];
 
-  // Fallback para nomes de utilizador sem domínio (ex.: "maria.silva").
   if (!user && !originalValue.includes('@')) {
     const fallbackUrl = new URL('https://graph.microsoft.com/v1.0/users');
     fallbackUrl.searchParams.set('$top', '1');
@@ -154,7 +151,6 @@ export const searchUsersByDisplayName = async (
   const trimmed = query.trim();
   if (!trimmed || trimmed.length < 2) return [];
 
-  // Tentativa 1: pesquisa completa no diretório (requer admin consent)
   try {
     const url = new URL('https://graph.microsoft.com/v1.0/users');
     url.searchParams.set('$top', '10');
@@ -186,7 +182,6 @@ export const searchUsersByDisplayName = async (
     // continua para fallback
   }
 
-  // Fallback: /me/people (sem admin consent, mas resultados limitados a contactos)
   try {
     const url2 = new URL('https://graph.microsoft.com/v1.0/me/people');
     url2.searchParams.set('$top', '10');
@@ -255,7 +250,6 @@ export const runOfficeScriptByName = async (
   itemId: string,
   scriptName: string
 ): Promise<void> => {
-  // 1. Listar scripts do workbook
   const scripts = await listOfficeScripts(token, itemId);
   const match = scripts.find(
     s => s.name.toLowerCase().trim() === scriptName.toLowerCase().trim()
@@ -266,7 +260,6 @@ export const runOfficeScriptByName = async (
     );
   }
 
-  // 2. Executar o script encontrado
   const runRes = await fetch(
     `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/workbook/scripts/${match.id}/run`,
     {
@@ -342,6 +335,10 @@ export const listSharedWithMe = async (
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
+
+  console.log('[sharedWithMe] status:', res.status);
+  console.log('[sharedWithMe] raw data:', JSON.stringify(data, null, 2));
+
   return (data.value ?? []).map((item: any) => ({
     id: item.remoteItem?.id ?? item.id,
     name: item.name,
@@ -368,6 +365,11 @@ export const listSharedFolderChildren = async (
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
+
+  console.log('[sharedFolderChildren] driveId:', driveId, 'itemId:', itemId);
+  console.log('[sharedFolderChildren] status:', res.status);
+  console.log('[sharedFolderChildren] raw data:', JSON.stringify(data, null, 2));
+
   return (data.value ?? []).map((item: any) => ({
     ...item,
     driveId,
