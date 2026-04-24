@@ -357,8 +357,8 @@ export const listSharedWithMe = async (
   token: string
 ): Promise<SharedDriveItem[]> => {
   const endpoints = [
-    'https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$select=id,name,file,folder,size,lastModifiedDateTime,remoteItem',
     "https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$expand=remoteItem($select=id,name,file,folder,size,lastModifiedDateTime,parentReference)",
+    'https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$select=id,name,file,folder,size,lastModifiedDateTime,remoteItem',
   ];
 
   let data: any = null;
