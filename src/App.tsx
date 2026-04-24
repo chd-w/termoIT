@@ -111,6 +111,7 @@ const App: React.FC = () => {
   const [isOneDrivePickerOpen, setIsOneDrivePickerOpen] = useState(false);
   const [isAddRowModalOpen, setIsAddRowModalOpen] = useState(false);
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
+  const [pickedDriveId, setPickedDriveId] = useState<string | null>(null);
   const [pickedFileName, setPickedFileName] = useState<string | undefined>(undefined);
   const [isRefreshingFile, setIsRefreshingFile] = useState(false);
 
@@ -339,12 +340,13 @@ const App: React.FC = () => {
   };
 
 
-  const handleOneDriveFilePicked = async (buffer: ArrayBuffer, name: string, itemId: string) => {
+  const handleOneDriveFilePicked = async (buffer: ArrayBuffer, name: string, itemId: string, driveId?: string) => {
     try {
       const file = new File([buffer], name, {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       });
       setPickedDriveItemId(itemId);
+      setPickedDriveId(driveId ?? null);
       setPickedFileName(name);
       setExcelFile(file);
       await handleExcelUpload(file);
@@ -354,6 +356,24 @@ const App: React.FC = () => {
       console.error('Erro ao carregar ficheiro do OneDrive:', error);
       alert('Não foi possível carregar o ficheiro do OneDrive.');
     }
+  };
+
+  const handleLocalFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
+        setExcelFile(file); 
+        setPickedDriveItemId(undefined);
+        setPickedDriveId(null);
+        setPickedFileName(file.name);
+        handleExcelUpload(file); 
+        resetSelections();
+      } else {
+        alert('Por favor, selecione um arquivo Excel (.xlsx ou .xls)');
+      }
+    }
+    // limpa o input para permitir selecionar o mesmo arquivo novamente se necessário
+    event.target.value = '';
   };
 
   const handleExcelUpload = async (file: File) => {
@@ -1188,6 +1208,7 @@ const App: React.FC = () => {
       {isAddRowModalOpen && pickedDriveItemId && (
         <AddRowModal
           itemId={pickedDriveItemId}
+          driveId={pickedDriveId ?? undefined}
           onClose={() => setIsAddRowModalOpen(false)}
           onSuccess={async () => {
             // Fecha o modal e executa o normalizador — o banner de estado aparece na página principal.
