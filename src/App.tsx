@@ -356,23 +356,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleLocalFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      if (file.name.endsWith('.xlsx') || file.name.endsWith('.xls')) {
-        setExcelFile(file); 
-        setPickedDriveItemId(undefined);
-        setPickedFileName(file.name);
-        handleExcelUpload(file); 
-        resetSelections();
-      } else {
-        alert('Por favor, selecione um arquivo Excel (.xlsx ou .xls)');
-      }
-    }
-    // limpa o input para permitir selecionar o mesmo arquivo novamente se necessário
-    event.target.value = '';
-  };
-
   const handleExcelUpload = async (file: File) => {
     setExcelFile(file);
     try {
