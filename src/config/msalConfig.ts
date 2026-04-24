@@ -11,14 +11,19 @@ export const msalConfig: Configuration = {
     postLogoutRedirectUri: appRedirectUri,
   },
   cache: {
-    cacheLocation: 'localStorage', // Usar localStorage previne perdas de contexto em redirecionamentos
+    cacheLocation: 'localStorage',
   },
 };
 
 export const loginRequest: PopupRequest = {
-  scopes: ['User.Read', 'Files.Read', 'Files.ReadWrite', 'People.Read', 'User.Read.All'],
+  scopes: [
+    'User.Read',
+    'Files.Read',
+    'Files.ReadWrite',
+    'Files.Read.All',
+    'Sites.Read.All',
+    'People.Read',
+    'User.Read.All',
+  ],
   redirectUri: appRedirectUri,
 };
-
-
-
