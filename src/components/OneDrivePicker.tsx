@@ -8,7 +8,7 @@ import {
 import { appRedirectUri, loginRequest } from '../config/msalConfig';
 
 interface OneDrivePickerProps {
-  onFilePicked: (buffer: ArrayBuffer, name: string, itemId: string) => void;
+  onFilePicked: (buffer: ArrayBuffer, name: string, itemId: string, driveId?: string) => void;
   onClose: () => void;
   pickedItemId?: string;
   onReload?: () => void;
@@ -123,7 +123,8 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
       } else {
         buffer = await downloadDriveItem(token, item.id);
       }
-      onFilePicked(buffer, item.name, item.id);
+      // Passa o driveId quando o ficheiro vem de uma pasta partilhada
+      onFilePicked(buffer, item.name, item.id, item.driveId ?? undefined);
     } catch {
       setError('Erro ao descarregar ficheiro.');
     } finally {
@@ -235,6 +236,7 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                     const isFolder = !!item.folder;
                     const isPicked = item.id === pickedItemId;
                     const isDown = downloading === item.id;
+
                     return (
                       <div key={item.id}
                         onClick={() => isFolder ? navigateInto(item) : handlePick(item)}
