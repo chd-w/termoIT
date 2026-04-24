@@ -356,14 +356,29 @@ const extractFolderNameFromPath = (path?: string): string | undefined => {
 export const listSharedWithMe = async (
   token: string
 ): Promise<SharedDriveItem[]> => {
-  const res = await fetch(
+  const endpoints = [
+    'https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$select=id,name,file,folder,size,lastModifiedDateTime,remoteItem',
     "https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$expand=remoteItem($select=id,name,file,folder,size,lastModifiedDateTime,parentReference)",
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
-  const data = await res.json();
+  ];
 
-  console.log('[sharedWithMe] status:', res.status);
-  console.log('[sharedWithMe] raw data:', JSON.stringify(data, null, 2));
+  let data: any = null;
+  let lastError = '';
+
+  for (const url of endpoints) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    const body = await res.json();
+    if (res.ok && Array.isArray(body?.value)) {
+      data = body;
+      break;
+    }
+    lastError = body?.error?.message ?? `Graph ${res.status}`;
+  }
+
+  if (!data) {
+    throw new Error(`Erro ao listar partilhados: ${lastError || 'resposta inválida do Graph'}`);
+  }
 
   return (data.value ?? []).map((item: any) => ({
     id: item.remoteItem?.id ?? item.id,
@@ -372,8 +387,8 @@ export const listSharedWithMe = async (
     folder: item.remoteItem?.folder ?? item.folder,
     size: item.remoteItem?.size ?? item.size,
     lastModifiedDateTime: item.remoteItem?.lastModifiedDateTime ?? item.lastModifiedDateTime,
-    driveId: item.remoteItem?.parentReference?.driveId,
-    parentItemId: item.remoteItem?.parentReference?.id,
+    driveId: item.remoteItem?.parentReference?.driveId ?? item.parentReference?.driveId,
+    parentItemId: item.remoteItem?.parentReference?.id ?? item.parentReference?.id,
     parentPath: extractFolderNameFromPath(item.remoteItem?.parentReference?.path),
     remoteItemId: item.remoteItem?.id,
   }));
@@ -393,10 +408,9 @@ export const listSharedFolderChildren = async (
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
-
-  console.log('[sharedFolderChildren] driveId:', driveId, 'itemId:', itemId);
-  console.log('[sharedFolderChildren] status:', res.status);
-  console.log('[sharedFolderChildren] raw data:', JSON.stringify(data, null, 2));
+  if (!res.ok) {
+    throw new Error(data?.error?.message ?? `Erro ao listar pasta partilhada (${res.status})`);
+  }
 
   return (data.value ?? []).map((item: any) => ({
     ...item,
@@ -419,5 +433,9 @@ export const downloadSharedDriveItem = async (
     `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/content`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Erro ao descarregar ficheiro partilhado (${res.status}): ${err}`);
+  }
   return res.arrayBuffer();
 };
