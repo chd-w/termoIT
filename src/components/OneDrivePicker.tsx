@@ -114,6 +114,10 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
 
   const handlePick = async (item: SharedDriveItem) => {
     if (!account) return;
+    if (item.virtualFolder) {
+      navigateInto(item);
+      return;
+    }
     setDownloading(item.id);
     try {
       const token = await getAccessToken(instance, account);
@@ -137,6 +141,33 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
     const isRelevant = !!item.folder || isExcel(item);
     return matchSearch && isRelevant;
   });
+
+  const displayItems: SharedDriveItem[] = React.useMemo(() => {
+    if (!(tab === 'shared' && !currentFolderId)) return filtered;
+
+    const foldersMap = new Map<string, SharedDriveItem>();
+    const rootFolders = filtered.filter(item => !!item.folder);
+    for (const folder of rootFolders) {
+      foldersMap.set(`${folder.driveId ?? ''}:${folder.id}`, folder);
+    }
+
+    // Se a API só devolver ficheiros partilhados, cria entradas virtuais da pasta-mãe.
+    for (const item of filtered) {
+      if (item.folder) continue;
+      if (!item.driveId || !item.parentItemId) continue;
+      const key = `${item.driveId}:${item.parentItemId}`;
+      if (foldersMap.has(key)) continue;
+      foldersMap.set(key, {
+        id: item.parentItemId,
+        name: item.parentPath || 'Pasta partilhada',
+        driveId: item.driveId,
+        folder: { childCount: 0 },
+        virtualFolder: true,
+      });
+    }
+
+    return Array.from(foldersMap.values());
+  }, [filtered, tab, currentFolderId]);
 
   return (
     <div className="fixed inset-0 z-[200] bg-black/90 flex items-center justify-center p-4">
@@ -226,13 +257,13 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                 <div className="flex items-center justify-center py-20">
                   <Loader2 size={32} className="animate-spin text-zinc-600" />
                 </div>
-              ) : filtered.length === 0 ? (
+              ) : displayItems.length === 0 ? (
                 <div className="text-center py-20 text-zinc-500 text-sm">
                   {search ? 'Nenhum resultado.' : tab === 'shared' ? 'Nenhum ficheiro ou pasta partilhada encontrada.' : 'Pasta vazia ou sem ficheiros Excel.'}
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-800/50">
-                  {filtered.map(item => {
+                  {displayItems.map(item => {
                     const isFolder = !!item.folder;
                     const isPicked = item.id === pickedItemId;
                     const isDown = downloading === item.id;

@@ -336,6 +336,8 @@ export const getFileWebUrl = async (token: string, itemId: string): Promise<stri
 export interface SharedDriveItem extends DriveItem {
   driveId?: string;
   remoteItemId?: string;
+  parentItemId?: string;
+  virtualFolder?: boolean;
 }
 
 const extractFolderNameFromPath = (path?: string): string | undefined => {
@@ -355,7 +357,7 @@ export const listSharedWithMe = async (
   token: string
 ): Promise<SharedDriveItem[]> => {
   const res = await fetch(
-    'https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$select=id,name,file,folder,size,lastModifiedDateTime,remoteItem',
+    "https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$top=200&$expand=remoteItem($select=id,name,file,folder,size,lastModifiedDateTime,parentReference)",
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
@@ -371,6 +373,7 @@ export const listSharedWithMe = async (
     size: item.remoteItem?.size ?? item.size,
     lastModifiedDateTime: item.remoteItem?.lastModifiedDateTime ?? item.lastModifiedDateTime,
     driveId: item.remoteItem?.parentReference?.driveId,
+    parentItemId: item.remoteItem?.parentReference?.id,
     parentPath: extractFolderNameFromPath(item.remoteItem?.parentReference?.path),
     remoteItemId: item.remoteItem?.id,
   }));
@@ -386,7 +389,7 @@ export const listSharedFolderChildren = async (
   itemId: string
 ): Promise<SharedDriveItem[]> => {
   const res = await fetch(
-    `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/children?$select=id,name,file,folder,size,lastModifiedDateTime&$orderby=name&$top=200`,
+    `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/children?$select=id,name,file,folder,size,lastModifiedDateTime,parentReference&$orderby=name&$top=200`,
     { headers: { Authorization: `Bearer ${token}` } }
   );
   const data = await res.json();
@@ -398,6 +401,7 @@ export const listSharedFolderChildren = async (
   return (data.value ?? []).map((item: any) => ({
     ...item,
     driveId,
+    parentItemId: item.parentReference?.id,
     parentPath: item.parentReference?.path,
   }));
 };
