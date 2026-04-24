@@ -322,4 +322,68 @@ export const getFileWebUrl = async (token: string, itemId: string): Promise<stri
   const data = await res.json();
   return data.webUrl;
 };
+// ─── Ficheiros Partilhados ────────────────────────────────────────────────────
+
+export interface SharedDriveItem extends DriveItem {
+  driveId?: string;        // ID do drive remoto
+  remoteItemId?: string;   // ID do item no drive remoto
+}
+
+/**
+ * Lista ficheiros e pastas partilhados com o utilizador.
+ * Requer: Files.Read.All ou Sites.Read.All
+ */
+export const listSharedWithMe = async (
+  token: string
+): Promise<SharedDriveItem[]> => {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/me/drive/sharedWithMe?$select=id,name,file,folder,size,lastModifiedDateTime,remoteItem`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const data = await res.json();
+  return (data.value ?? []).map((item: any) => ({
+    id: item.remoteItem?.id ?? item.id,
+    name: item.name,
+    file: item.remoteItem?.file ?? item.file,
+    folder: item.remoteItem?.folder ?? item.folder,
+    size: item.remoteItem?.size ?? item.size,
+    lastModifiedDateTime: item.remoteItem?.lastModifiedDateTime ?? item.lastModifiedDateTime,
+    driveId: item.remoteItem?.parentReference?.driveId,
+    remoteItemId: item.remoteItem?.id,
+  }));
+};
+
+/**
+ * Lista filhos de uma pasta partilhada (noutro drive).
+ */
+export const listSharedFolderChildren = async (
+  token: string,
+  driveId: string,
+  itemId: string
+): Promise<SharedDriveItem[]> => {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/children?$select=id,name,file,folder,size,lastModifiedDateTime&$orderby=name&$top=200`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  const data = await res.json();
+  return (data.value ?? []).map((item: any) => ({
+    ...item,
+    driveId, // propagar o driveId pai para navegação posterior
+  }));
+};
+
+/**
+ * Descarrega um ficheiro de um drive partilhado.
+ */
+export const downloadSharedDriveItem = async (
+  token: string,
+  driveId: string,
+  itemId: string
+): Promise<ArrayBuffer> => {
+  const res = await fetch(
+    `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}/content`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  return res.arrayBuffer();
+};
 
