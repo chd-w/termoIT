@@ -118,12 +118,16 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
       navigateInto(item);
       return;
     }
+    if (tab === 'shared' && !item.driveId) {
+      setError('Não foi possível obter o driveId do item partilhado. Reabra o picker e selecione a pasta partilhada antes do ficheiro.');
+      return;
+    }
     setDownloading(item.id);
     try {
       const token = await getAccessToken(instance, account);
       let buffer: ArrayBuffer;
-      if (tab === 'shared' && item.driveId) {
-        buffer = await downloadSharedDriveItem(token, item.driveId, item.id);
+      if (tab === 'shared') {
+        buffer = await downloadSharedDriveItem(token, item.driveId!, item.id);
       } else {
         buffer = await downloadDriveItem(token, item.id);
       }
