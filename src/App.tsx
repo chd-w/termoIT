@@ -9,6 +9,7 @@ import * as FileSaverLib from 'file-saver';
 import { useMsal } from '@azure/msal-react';
 import { appRedirectUri, loginRequest } from './config/msalConfig';
 import { getAccessToken, searchUserByUtilizador, searchUsersByDisplayName, downloadDriveItem } from './services/msGraphService';
+import { normalizeAndUploadToOneDrive } from './services/excelNormalizer';
 
 import OneDrivePicker from './components/OneDrivePicker';
 import AddRowModal from './components/AddRowModal';
@@ -112,6 +113,11 @@ const App: React.FC = () => {
   const [pickedDriveItemId, setPickedDriveItemId] = useState<string | undefined>(undefined);
   const [pickedFileName, setPickedFileName] = useState<string | undefined>(undefined);
   const [isRefreshingFile, setIsRefreshingFile] = useState(false);
+
+  // Estado do normalizador (executado após AddRowModal)
+  type NormalizerStatus = { type: 'success'; summary: { ptRows: number; telecomRows: number; combinedRows: number } } | { type: 'error'; message: string } | null;
+  const [normalizerStatus, setNormalizerStatus] = useState<NormalizerStatus>(null);
+  const [isNormalizing, setIsNormalizing] = useState(false);
 
   // Estado do autocomplete de nome de colaborador
   const [userSearchResults, setUserSearchResults] = useState<{displayName?: string; mail?: string; userPrincipalName?: string; jobTitle?: string; companyName?: string}[]>([]);
@@ -302,6 +308,33 @@ const App: React.FC = () => {
       alert(`Erro ao recarregar ficheiro: ${err?.message ?? err}`);
     } finally {
       setIsRefreshingFile(false);
+    }
+  };
+
+  const handleNormalizeAndRefreshFile = async () => {
+    if (!pickedDriveItemId) {
+      await handleRefreshFile();
+      return;
+    }
+
+    setIsNormalizing(true);
+    setNormalizerStatus(null);
+    try {
+      const account = instance.getActiveAccount() ?? accounts[0];
+      if (!account) {
+        setNormalizerStatus({ type: 'error', message: 'Inicie sessão Microsoft 365 primeiro.' });
+        return;
+      }
+
+      const token = await getAccessToken(instance, account);
+      const buffer = await downloadDriveItem(token, pickedDriveItemId);
+      const result = await normalizeAndUploadToOneDrive(buffer, pickedDriveItemId, token);
+      setNormalizerStatus({ type: 'success', summary: result.summary });
+      await handleRefreshFile();
+    } catch (err: any) {
+      setNormalizerStatus({ type: 'error', message: err?.message ?? 'Erro desconhecido ao normalizar.' });
+    } finally {
+      setIsNormalizing(false);
     }
   };
 
@@ -596,6 +629,21 @@ const App: React.FC = () => {
     return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
   };
 
+  const highlightMatch = (text: string, term: string): React.ReactNode => {
+    if (!term) return text;
+    const normalized = normalizeForSearch(term);
+    const normalizedText = normalizeForSearch(text);
+    const idx = normalizedText.indexOf(normalized);
+    if (idx === -1) return text;
+    return (
+      <>
+        {text.slice(0, idx)}
+        <mark className="bg-yellow-400/40 text-yellow-200 rounded px-0.5">{text.slice(idx, idx + term.length)}</mark>
+        {text.slice(idx + term.length)}
+      </>
+    );
+  };
+
   const filterData = <T extends Record<string, any>>(data: T[]): T[] => {
     if (!searchTerm) return data;
     const normalized = normalizeForSearch(searchTerm);
@@ -695,16 +743,6 @@ const App: React.FC = () => {
           <div className="max-w-4xl mx-auto">
             
             <div className="flex items-center gap-3 bg-zinc-900 p-4 rounded-2xl border border-zinc-800">
-              <label className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 w-12 h-12 rounded-xl flex items-center justify-center transition-colors shadow-lg" title="Carregar ficheiro local">
-                <Plus size={20} className="text-white" />
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleLocalFileChange}
-                  className="hidden"
-                />
-              </label>
-
               <button
                 onClick={handleOpenWithFilePicker}
                 disabled={accounts.length === 0}
@@ -748,7 +786,7 @@ const App: React.FC = () => {
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
                     <input 
                       className="bg-zinc-800 border border-zinc-700 pl-10 pr-4 py-3 rounded-xl text-sm w-80"
-                      placeholder="Pesquisar por nome..."
+                      placeholder="Pesquisar em todas as colunas..."
                       value={searchTerm}
                       onChange={e => setSearchTerm(e.target.value)}
                     />
@@ -774,6 +812,40 @@ const App: React.FC = () => {
                     <span className="ml-2 text-indigo-400">{filteredTelecom.length} Telecom</span>
                     <span className="ml-2 text-green-400">{filteredRepStock.length} REP/Stock</span>
                     <span className="ml-2 text-amber-400">{filteredPosto.length} Posto</span>
+                  </div>
+                )}
+
+                {/* ESTADO DO NORMALIZADOR */}
+                {isNormalizing && (
+                  <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-800/60 border border-zinc-700 text-xs text-zinc-300">
+                    <Loader2 size={14} className="animate-spin text-indigo-400 flex-shrink-0" />
+                    A normalizar e a recarregar o ficheiro...
+                  </div>
+                )}
+                {normalizerStatus && !isNormalizing && (
+                  <div className={`flex items-start gap-3 px-4 py-3 rounded-xl border text-xs ${normalizerStatus.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-300'}`}>
+                    {normalizerStatus.type === 'success' ? (
+                      <>
+                        <Check size={14} className="flex-shrink-0 mt-0.5 text-emerald-400" />
+                        <div>
+                          <p className="font-bold">Normalizador executado com sucesso!</p>
+                          <p className="text-[10px] text-emerald-400/70 mt-0.5">
+                            PT: {normalizerStatus.summary.ptRows} linhas · Telecom: {normalizerStatus.summary.telecomRows} linhas · REP+Stock: {normalizerStatus.summary.combinedRows} linhas
+                          </p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <XCircle size={14} className="flex-shrink-0 mt-0.5 text-red-400" />
+                        <div>
+                          <p className="font-bold">Erro no normalizador</p>
+                          <p className="text-[10px] text-red-400/70 mt-0.5">{normalizerStatus.message}</p>
+                        </div>
+                      </>
+                    )}
+                    <button onClick={() => setNormalizerStatus(null)} className="ml-auto text-zinc-500 hover:text-white flex-shrink-0">
+                      <XCircle size={13} />
+                    </button>
                   </div>
                 )}
 
@@ -805,7 +877,7 @@ const App: React.FC = () => {
                                   />
                                 </td>
                                 {Object.keys(row).map(k => (
-                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                  <td key={k} className="p-2">{highlightMatch(formatExcelValue(row[k]), searchTerm)}</td>
                                 ))}
                               </tr>
                             );
@@ -844,7 +916,7 @@ const App: React.FC = () => {
                                   />
                                 </td>
                                 {Object.keys(row).map(k => (
-                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                  <td key={k} className="p-2">{highlightMatch(formatExcelValue(row[k]), searchTerm)}</td>
                                 ))}
                               </tr>
                             );
@@ -883,7 +955,7 @@ const App: React.FC = () => {
                                   />
                                 </td>
                                 {Object.keys(row).map(k => (
-                                  <td key={k} className="p-2">{formatExcelValue(row[k])}</td>
+                                  <td key={k} className="p-2">{highlightMatch(formatExcelValue(row[k]), searchTerm)}</td>
                                 ))}
                               </tr>
                             );
@@ -1134,9 +1206,10 @@ const App: React.FC = () => {
         <AddRowModal
           itemId={pickedDriveItemId}
           onClose={() => setIsAddRowModalOpen(false)}
-          onSuccess={() => {
-            // Recarrega os dados da app após inserção para refletir a nova linha
-            handleRefreshFile();
+          onSuccess={async () => {
+            // Fecha o modal e executa o normalizador — o banner de estado aparece na página principal.
+            setIsAddRowModalOpen(false);
+            await handleNormalizeAndRefreshFile();
           }}
         />
       )}
