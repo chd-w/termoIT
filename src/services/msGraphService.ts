@@ -44,12 +44,16 @@ export const listDriveItems = async (
 
 export const downloadDriveItem = async (
   token: string,
-  itemId: string
+  itemId: string,
+  driveId?: string // ← NOVO: suporte a ficheiros partilhados
 ): Promise<ArrayBuffer> => {
-  const res = await fetch(
-    `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/content`,
-    { headers: { Authorization: `Bearer ${token}` } }
-  );
+  const base = driveId
+    ? `https://graph.microsoft.com/v1.0/drives/${driveId}/items/${itemId}`
+    : `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}`;
+
+  const res = await fetch(`${base}/content`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
   return res.arrayBuffer();
 };
 
