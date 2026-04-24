@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useMsal } from '@azure/msal-react';
 import { Folder, FileSpreadsheet, ChevronRight, RefreshCw, X, Home, Loader2, LogIn } from 'lucide-react';
-import { getAccessToken, listDriveItems, downloadDriveItem, DriveItem } from '../services/msGraphService';
+import {
+  getAccessToken, listDriveItems, downloadDriveItem, DriveItem,
+  listSharedWithMe, listSharedFolderChildren, downloadSharedDriveItem, SharedDriveItem
+} from '../services/msGraphService';
 import { appRedirectUri, loginRequest } from '../config/msalConfig';
 
 interface OneDrivePickerProps {
@@ -15,11 +18,13 @@ interface OneDrivePickerProps {
 interface BreadcrumbEntry {
   id?: string;
   name: string;
+  driveId?: string;
 }
 
+type Tab = 'myDrive' | 'shared';
+
 const isExcel = (item: DriveItem) =>
-  !!item.file &&
-  (item.name.endsWith('.xlsx') || item.name.endsWith('.xls'));
+  !!item.file && (item.name.endsWith('.xlsx') || item.name.endsWith('.xls'));
 
 const formatSize = (bytes?: number) => {
   if (!bytes) return '';
@@ -29,56 +34,63 @@ const formatSize = (bytes?: number) => {
 };
 
 const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
-  onFilePicked,
-  onClose,
-  pickedItemId,
-  onReload,
-  isReloading,
+  onFilePicked, onClose, pickedItemId, onReload, isReloading,
 }) => {
   const { instance, accounts } = useMsal();
   const account = accounts[0];
 
-  const [items, setItems] = useState<DriveItem[]>([]);
+  const [tab, setTab] = useState<Tab>('myDrive');
+  const [items, setItems] = useState<SharedDriveItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [downloading, setDownloading] = useState<string | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbEntry[]>([{ name: 'OneDrive' }]);
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
 
-  const currentFolderId = breadcrumbs[breadcrumbs.length - 1]?.id;
+  const currentCrumb = breadcrumbs[breadcrumbs.length - 1];
+  const currentFolderId = currentCrumb?.id;
+  const currentDriveId = currentCrumb?.driveId;
 
-  const loadItems = useCallback(async (folderId?: string) => {
+  const loadItems = useCallback(async () => {
     if (!account) return;
     setLoading(true);
     setError('');
     try {
       const token = await getAccessToken(instance, account);
-      const data = await listDriveItems(token, folderId);
-      setItems(data);
+      if (tab === 'myDrive') {
+        const data = await listDriveItems(token, currentFolderId);
+        setItems(data);
+      } else {
+        if (!currentFolderId) {
+          const data = await listSharedWithMe(token);
+          setItems(data);
+        } else {
+          const data = await listSharedFolderChildren(token, currentDriveId!, currentFolderId);
+          setItems(data);
+        }
+      }
     } catch (e: any) {
       setError(`Erro ao carregar ficheiros: ${e?.message ?? 'Verifica as permissões.'}`);
     } finally {
       setLoading(false);
     }
-  }, [instance, account]);
+  }, [instance, account, tab, currentFolderId, currentDriveId]);
 
-  // Recarrega quando muda de pasta OU quando o utilizador acaba de fazer login
-  // (sem este dep em `account`, a lista nunca aparecia após o popup de login)
   useEffect(() => {
-    if (account) {
-      loadItems(currentFolderId);
-    }
-  }, [currentFolderId, account, loadItems]);
+    if (account) loadItems();
+  }, [loadItems, account]);
+
+  const switchTab = (t: Tab) => {
+    setTab(t);
+    setSearch('');
+    setBreadcrumbs([{ name: t === 'myDrive' ? 'OneDrive' : 'Partilhado comigo' }]);
+    setItems([]);
+  };
 
   const handleLogin = async () => {
     setError('');
     try {
-      await instance.loginRedirect({
-        ...loginRequest,
-        redirectUri: appRedirectUri,
-        prompt: 'select_account',
-      });
-      // A execução irá parar aqui porque a página navega para a Microsoft
+      await instance.loginRedirect({ ...loginRequest, redirectUri: appRedirectUri, prompt: 'select_account' });
     } catch (e: any) {
       if (e?.errorCode !== 'user_cancelled') {
         setError(`Falha no login: ${e?.message ?? e?.errorCode ?? 'erro desconhecido'}`);
@@ -86,9 +98,13 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
     }
   };
 
-  const navigateInto = (item: DriveItem) => {
+  const navigateInto = (item: SharedDriveItem) => {
     setSearch('');
-    setBreadcrumbs(prev => [...prev, { id: item.id, name: item.name }]);
+    setBreadcrumbs(prev => [...prev, {
+      id: item.id,
+      name: item.name,
+      driveId: item.driveId ?? currentDriveId,
+    }]);
   };
 
   const navigateTo = (index: number) => {
@@ -96,12 +112,17 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
     setBreadcrumbs(prev => prev.slice(0, index + 1));
   };
 
-  const handlePick = async (item: DriveItem) => {
+  const handlePick = async (item: SharedDriveItem) => {
     if (!account) return;
     setDownloading(item.id);
     try {
       const token = await getAccessToken(instance, account);
-      const buffer = await downloadDriveItem(token, item.id);
+      let buffer: ArrayBuffer;
+      if (tab === 'shared' && item.driveId) {
+        buffer = await downloadSharedDriveItem(token, item.driveId, item.id);
+      } else {
+        buffer = await downloadDriveItem(token, item.id);
+      }
       onFilePicked(buffer, item.name, item.id);
     } catch {
       setError('Erro ao descarregar ficheiro.');
@@ -134,11 +155,8 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
           </div>
           <div className="flex items-center gap-2">
             {pickedItemId && onReload && (
-              <button
-                onClick={onReload}
-                disabled={isReloading}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold uppercase transition-colors disabled:opacity-50"
-              >
+              <button onClick={onReload} disabled={isReloading}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-xs font-bold uppercase transition-colors disabled:opacity-50">
                 <RefreshCw size={13} className={isReloading ? 'animate-spin' : ''} />
                 Recarregar ficheiro
               </button>
@@ -150,7 +168,6 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
         </div>
 
         {!account ? (
-          // Not logged in
           <div className="flex-1 flex flex-col items-center justify-center gap-6 p-10">
             <div className="w-20 h-20 rounded-full bg-blue-500/10 flex items-center justify-center">
               <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 23 23" fill="none">
@@ -164,36 +181,39 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
               <p className="font-bold text-lg mb-1">Iniciar sessão com Microsoft</p>
               <p className="text-sm text-zinc-400">Para aceder aos ficheiros do OneDrive</p>
             </div>
-            <button
-              onClick={handleLogin}
-              className="flex items-center gap-3 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold uppercase text-sm transition-colors"
-            >
+            <button onClick={handleLogin}
+              className="flex items-center gap-3 px-8 py-4 rounded-xl bg-blue-600 hover:bg-blue-700 font-bold uppercase text-sm transition-colors">
               <LogIn size={18} /> Entrar com Microsoft
             </button>
           </div>
         ) : (
           <>
+            {/* Tabs */}
+            <div className="px-5 pt-3 flex gap-2 border-b border-zinc-800">
+              {([['myDrive', 'O meu OneDrive'], ['shared', 'Partilhado comigo']] as [Tab, string][]).map(([t, label]) => (
+                <button key={t} onClick={() => switchTab(t as Tab)}
+                  className={`px-4 py-2 text-xs font-bold uppercase rounded-t-lg transition-colors border-b-2
+                    ${tab === t ? 'border-blue-500 text-white' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>
+                  {label}
+                </button>
+              ))}
+            </div>
+
             {/* Breadcrumbs + search */}
             <div className="px-5 pt-4 pb-3 border-b border-zinc-800 flex items-center justify-between gap-4">
               <div className="flex items-center gap-1 text-xs text-zinc-400 flex-wrap">
                 {breadcrumbs.map((bc, i) => (
                   <React.Fragment key={i}>
                     {i > 0 && <ChevronRight size={12} className="text-zinc-600" />}
-                    <button
-                      onClick={() => navigateTo(i)}
-                      className={`hover:text-white transition-colors ${i === breadcrumbs.length - 1 ? 'text-white font-bold' : ''}`}
-                    >
+                    <button onClick={() => navigateTo(i)}
+                      className={`hover:text-white transition-colors ${i === breadcrumbs.length - 1 ? 'text-white font-bold' : ''}`}>
                       {i === 0 ? <Home size={13} /> : bc.name}
                     </button>
                   </React.Fragment>
                 ))}
               </div>
-              <input
-                className="bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-lg text-xs w-44"
-                placeholder="Pesquisar..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+              <input className="bg-zinc-800 border border-zinc-700 px-3 py-1.5 rounded-lg text-xs w-44"
+                placeholder="Pesquisar..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
 
             {/* File list */}
@@ -207,7 +227,7 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="text-center py-20 text-zinc-500 text-sm">
-                  {search ? 'Nenhum resultado.' : 'Pasta vazia ou sem ficheiros Excel.'}
+                  {search ? 'Nenhum resultado.' : tab === 'shared' ? 'Nenhum ficheiro ou pasta partilhada encontrada.' : 'Pasta vazia ou sem ficheiros Excel.'}
                 </div>
               ) : (
                 <div className="divide-y divide-zinc-800/50">
@@ -216,36 +236,25 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
                     const isPicked = item.id === pickedItemId;
                     const isDown = downloading === item.id;
                     return (
-                      <div
-                        key={item.id}
+                      <div key={item.id}
                         onClick={() => isFolder ? navigateInto(item) : handlePick(item)}
                         className={`flex items-center gap-4 px-5 py-3.5 cursor-pointer transition-colors
-                          ${isPicked ? 'bg-emerald-900/20 border-l-2 border-emerald-500' : 'hover:bg-zinc-800/40'}
-                        `}
-                      >
-                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 
-                          ${isFolder ? 'bg-amber-500/15' : 'bg-emerald-500/15'}`}
-                        >
+                          ${isPicked ? 'bg-emerald-900/20 border-l-2 border-emerald-500' : 'hover:bg-zinc-800/40'}`}>
+                        <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0
+                          ${isFolder ? 'bg-amber-500/15' : 'bg-emerald-500/15'}`}>
                           {isFolder
                             ? <Folder size={16} className="text-amber-400" />
-                            : <FileSpreadsheet size={16} className="text-emerald-400" />
-                          }
+                            : <FileSpreadsheet size={16} className="text-emerald-400" />}
                         </div>
                         <div className="flex-1 min-w-0">
                           <p className={`text-sm font-medium truncate ${isPicked ? 'text-emerald-400' : ''}`}>{item.name}</p>
-                          {!isFolder && (
-                            <p className="text-[10px] text-zinc-500 mt-0.5">{formatSize(item.size)}</p>
-                          )}
+                          {!isFolder && <p className="text-[10px] text-zinc-500 mt-0.5">{formatSize(item.size)}</p>}
                         </div>
                         {isPicked && (
-                          <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2 py-1 rounded-lg">
-                            Selecionado
-                          </span>
+                          <span className="text-[9px] font-bold text-emerald-400 uppercase tracking-wider bg-emerald-500/10 px-2 py-1 rounded-lg">Selecionado</span>
                         )}
                         {isDown && <Loader2 size={16} className="animate-spin text-zinc-400 flex-shrink-0" />}
-                        {isFolder && !isDown && (
-                          <ChevronRight size={14} className="text-zinc-600 flex-shrink-0" />
-                        )}
+                        {isFolder && !isDown && <ChevronRight size={14} className="text-zinc-600 flex-shrink-0" />}
                       </div>
                     );
                   })}
@@ -253,7 +262,6 @@ const OneDrivePicker: React.FC<OneDrivePickerProps> = ({
               )}
             </div>
 
-            {/* Footer */}
             <div className="px-5 py-3 border-t border-zinc-800 text-[10px] text-zinc-500">
               Apenas pastas e ficheiros Excel (.xlsx, .xls) são mostrados
             </div>
