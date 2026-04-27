@@ -317,6 +317,14 @@ export async function normalizeAndUploadToOneDrive(
   token: string,
   driveId?: string
 ): Promise<NormalizeResult> {
+  const sleep = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+  const isResourceLocked = (status: number, bodyText: string) => {
+    if (status === 423) return true;
+    const t = (bodyText || '').toLowerCase();
+    return t.includes('resourcelocked') || t.includes('the resource you are attempting to access is locked');
+  };
+
   // 1. Normalizar
   const result = normalizeExcelWorkbook(buffer);
 
@@ -325,21 +333,42 @@ export async function normalizeAndUploadToOneDrive(
     : `https://graph.microsoft.com/v1.0/me/drive/items/${itemId}/content`;
 
   // 2. Upload de volta ao OneDrive (substitui o ficheiro original)
-  const uploadRes = await fetch(
-    uploadUrl,
-    {
+  const maxAttempts = 6;
+  let lastStatus: number | null = null;
+  let lastBody = '';
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const uploadRes = await fetch(uploadUrl, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
       },
       body: result.buffer,
-    }
-  );
+    });
 
-  if (!uploadRes.ok) {
-    const errText = await uploadRes.text();
-    throw new Error(`Erro ao fazer upload do ficheiro normalizado (${uploadRes.status}): ${errText}`);
+    if (uploadRes.ok) break;
+
+    lastStatus = uploadRes.status;
+    lastBody = await uploadRes.text();
+
+    // Se o ficheiro estiver bloqueado (normalmente aberto no Excel/OneDrive),
+    // espera e tenta novamente.
+    if (isResourceLocked(uploadRes.status, lastBody) && attempt < maxAttempts) {
+      const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1)); // 1s,2s,4s,8s,15s...
+      await sleep(backoffMs);
+      continue;
+    }
+
+    // Outros erros: falha imediatamente
+    throw new Error(`Erro ao fazer upload do ficheiro normalizado (${uploadRes.status}): ${lastBody}`);
+  }
+
+  if (lastStatus && isResourceLocked(lastStatus, lastBody)) {
+    throw new Error(
+      'O ficheiro Excel está bloqueado (provavelmente aberto no Excel/OneDrive). ' +
+      'Feche o ficheiro e tente novamente em 10–20 segundos.'
+    );
   }
 
   return result;
