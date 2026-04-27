@@ -40,9 +40,43 @@ type Matrix = Row[];
 /** Lê uma folha como matriz de valores (igual a getUsedRange().getValues()) */
 function sheetToMatrix(ws: XLSX.WorkSheet): Matrix {
   if (!ws) return [];
+  const computeRangeFromCells = (): XLSX.Range | null => {
+    let maxR = -1;
+    let maxC = -1;
+    let found = false;
+    for (const k of Object.keys(ws)) {
+      if (k[0] === '!') continue;
+      if (!/^[A-Z]+[0-9]+$/.test(k)) continue;
+      const { r, c } = XLSX.utils.decode_cell(k);
+      if (r > maxR) maxR = r;
+      if (c > maxC) maxC = c;
+      found = true;
+    }
+    if (!found) return null;
+    return { s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } };
+  };
+
+  // Em alguns ficheiros atualizados via Microsoft Graph, a dimensão/!ref pode não expandir
+  // após escrever para uma linha nova. Fazemos fallback ao scan das células.
+  let range: XLSX.Range | null = null;
   const ref = ws['!ref'];
-  if (!ref) return [];
-  const range = XLSX.utils.decode_range(ref);
+  if (ref) {
+    try {
+      range = XLSX.utils.decode_range(ref);
+    } catch {
+      range = null;
+    }
+  }
+  const scanned = computeRangeFromCells();
+  if (!range && scanned) range = scanned;
+  if (range && scanned) {
+    range = {
+      s: { r: Math.min(range.s.r, scanned.s.r), c: Math.min(range.s.c, scanned.s.c) },
+      e: { r: Math.max(range.e.r, scanned.e.r), c: Math.max(range.e.c, scanned.e.c) },
+    };
+  }
+  if (!range) return [];
+
   const matrix: Matrix = [];
   for (let r = range.s.r; r <= range.e.r; r++) {
     const row: Row = [];

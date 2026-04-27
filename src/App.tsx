@@ -241,6 +241,12 @@ const App: React.FC = () => {
     setShowUserDropdown(false);
   };
 
+  const clearAllSelectionsOnly = () => {
+    setSelectedTelecom([]);
+    setSelectedRepStock([]);
+    setSelectedPosto([]);
+  };
+
   const handleUserNameSearch = (query: string) => {
     setFormData(prev => ({ ...prev, nomeColaborador: query }));
     setShowUserDropdown(true);
@@ -767,14 +773,23 @@ const App: React.FC = () => {
               <div className="mt-8 space-y-6">
                 <div className="flex items-center justify-between">
                   <h2 className="text-lg font-bold uppercase">Dados do Excel</h2>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
-                    <input 
-                      className="bg-zinc-800 border border-zinc-700 pl-10 pr-4 py-3 rounded-xl text-sm w-80"
-                      placeholder="Pesquisar em todas as colunas..."
-                      value={searchTerm}
-                      onChange={e => setSearchTerm(e.target.value)}
-                    />
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={resetSelections}
+                      className="px-4 py-3 rounded-xl border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 text-xs font-bold text-zinc-200 transition-colors"
+                      title="Remover todas as seleções e limpar o formulário"
+                    >
+                      Limpar seleções
+                    </button>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16}/>
+                      <input 
+                        className="bg-zinc-800 border border-zinc-700 pl-10 pr-4 py-3 rounded-xl text-sm w-80"
+                        placeholder="Pesquisar em todas as colunas..."
+                        value={searchTerm}
+                        onChange={e => setSearchTerm(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -837,7 +852,20 @@ const App: React.FC = () => {
                 {/* TABELA TELECOM */}
                 {filteredTelecom.length > 0 && (
                   <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-                    <h3 className="text-[10px] font-bold text-indigo-400 uppercase mb-4">Tabela Telecom ({filteredTelecom.length} registros)</h3>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <h3 className="text-[10px] font-bold text-indigo-400 uppercase">
+                        Tabela Telecom ({filteredTelecom.length} registros)
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={clearAllSelectionsOnly}
+                        className="w-7 h-7 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-200"
+                        title="Remover todas as seleções"
+                        aria-label="Remover todas as seleções"
+                      >
+                        <span className="text-[10px] font-black leading-none">×</span>
+                      </button>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-[10px]">
                         <thead className="bg-zinc-800/50 text-zinc-400">
@@ -876,7 +904,20 @@ const App: React.FC = () => {
                 {/* TABELA REP E STOCK */}
                 {filteredRepStock.length > 0 && (
                   <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-                    <h3 className="text-[10px] font-bold text-green-400 uppercase mb-4">Tabela REP e Stock ({filteredRepStock.length} registros)</h3>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <h3 className="text-[10px] font-bold text-green-400 uppercase">
+                        Tabela REP e Stock ({filteredRepStock.length} registros)
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={clearAllSelectionsOnly}
+                        className="w-7 h-7 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-200"
+                        title="Remover todas as seleções"
+                        aria-label="Remover todas as seleções"
+                      >
+                        <span className="text-[10px] font-black leading-none">×</span>
+                      </button>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-[10px]">
                         <thead className="bg-zinc-800/50 text-zinc-400">
@@ -915,7 +956,20 @@ const App: React.FC = () => {
                 {/* TABELA POSTO TRABALHO */}
                 {filteredPosto.length > 0 && (
                   <div className="bg-zinc-900 p-6 rounded-2xl border border-zinc-800">
-                    <h3 className="text-[10px] font-bold text-amber-400 uppercase mb-4">Tabela Posto Trabalho ({filteredPosto.length} registros)</h3>
+                    <div className="flex items-start justify-between gap-3 mb-4">
+                      <h3 className="text-[10px] font-bold text-amber-400 uppercase">
+                        Tabela Posto Trabalho ({filteredPosto.length} registros)
+                      </h3>
+                      <button
+                        type="button"
+                        onClick={clearAllSelectionsOnly}
+                        className="w-7 h-7 rounded-lg border border-zinc-700 bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center text-zinc-200"
+                        title="Remover todas as seleções"
+                        aria-label="Remover todas as seleções"
+                      >
+                        <span className="text-[10px] font-black leading-none">×</span>
+                      </button>
+                    </div>
                     <div className="overflow-x-auto">
                       <table className="w-full text-[10px]">
                         <thead className="bg-zinc-800/50 text-zinc-400">
