@@ -354,13 +354,17 @@ export async function normalizeAndUploadToOneDrive(
 
     // Se o ficheiro estiver bloqueado (normalmente aberto no Excel/OneDrive),
     // espera e tenta novamente.
-    if (isResourceLocked(uploadRes.status, lastBody) && attempt < maxAttempts) {
-      const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1)); // 1s,2s,4s,8s,15s...
-      await sleep(backoffMs);
-      continue;
+    if (isResourceLocked(uploadRes.status, lastBody)) {
+      if (attempt < maxAttempts) {
+        const backoffMs = Math.min(15000, 1000 * Math.pow(2, attempt - 1)); // 1s,2s,4s,8s,15s...
+        await sleep(backoffMs);
+        continue;
+      }
+      // Última tentativa ainda locked -> sai do loop para lançar mensagem amigável abaixo
+      break;
     }
 
-    // Outros erros: falha imediatamente
+    // Outros erros: falha imediatamente (mantém corpo para debug)
     throw new Error(`Erro ao fazer upload do ficheiro normalizado (${uploadRes.status}): ${lastBody}`);
   }
 
