@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { 
-  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut
+  Database, XCircle, Loader2, Download, Search, ChevronRight, FileText, Plus, RefreshCw, Printer, ArrowLeft, Check, LogIn, LogOut, Play
 } from 'lucide-react';
 import { parseExcelFileMultiSheet } from './services/excelProcessor';
 import { UserFormData, TelecomData, REPStockData, PostoTrabalhoData } from './types';
@@ -434,7 +434,7 @@ const App: React.FC = () => {
     resetSelections();
   };
 
-  const DocumentVisual = () => {
+  const DocumentVisual: React.FC<{ idOverride?: string }> = ({ idOverride }) => {
     const isTR = selectedTemplate === 'TR';
     const titulo = isTR 
       ? 'TERMO DE RESPONSABILIDADE PELO USO DE EQUIPAMENTO INFORMÁTICO'
@@ -473,7 +473,11 @@ const App: React.FC = () => {
     const filteredPostoForDoc = selectedPosto.map(filterColumns);
 
     return (
-      <div id="document-print-area" className="bg-white text-black p-[15mm] mx-auto relative text-justify shadow-inner" style={{ width: '210mm', minHeight: '297mm', fontFamily: 'Arial, sans-serif' }}>
+      <div
+        id={idOverride ?? 'document-print-area'}
+        className="bg-white text-black p-[15mm] mx-auto relative text-justify shadow-inner"
+        style={{ width: '210mm', minHeight: '297mm', fontFamily: 'Arial, sans-serif' }}
+      >
         
         {/* LOGO USANDO O IMPORT DIRETO */}
         <div className="absolute top-[15mm] right-[15mm] w-40 h-20 flex justify-end items-start">
@@ -749,13 +753,23 @@ const App: React.FC = () => {
                     {excelFile?.name}
                   </div>
                   {pickedDriveItemId && (
-                    <button
-                      onClick={() => setIsAddRowModalOpen(true)}
-                      className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
-                      title="Adicionar registo numa folha Excel"
-                    >
-                      <Plus size={18} className="text-violet-400" />
-                    </button>
+                    <>
+                      <button
+                        onClick={() => setIsAddRowModalOpen(true)}
+                        className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700"
+                        title="Adicionar registo numa folha Excel"
+                      >
+                        <Plus size={18} className="text-violet-400" />
+                      </button>
+                      <button
+                        onClick={handleNormalizeAndRefreshFile}
+                        disabled={isNormalizing || isRefreshingFile}
+                        className="w-12 h-12 rounded-xl bg-zinc-800 hover:bg-zinc-700 flex items-center justify-center transition-colors border border-zinc-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Normalizar agora (tenta novamente se o ficheiro estiver bloqueado)"
+                      >
+                        <Play size={18} className="text-emerald-400" />
+                      </button>
+                    </>
                   )}
 
                   <button
@@ -1198,7 +1212,7 @@ const App: React.FC = () => {
       </main>
 
       {previewOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center p-4 print:hidden">
           <div className="bg-zinc-900 w-full max-w-5xl h-[95vh] rounded-3xl overflow-hidden flex flex-col border border-zinc-800 shadow-2xl">
             <div className="p-4 flex justify-between items-center border-b border-zinc-800">
               <span className="text-[10px] font-bold uppercase text-zinc-500">
@@ -1230,6 +1244,13 @@ const App: React.FC = () => {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Versão exclusiva para impressão (evita imprimir o modal/overlay) */}
+      {previewOpen && (
+        <div className="hidden print:block">
+          <DocumentVisual idOverride="document-print-area-print" />
         </div>
       )}
 

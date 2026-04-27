@@ -105,12 +105,12 @@ button:active {
     visibility: hidden !important;
   }
 
-  #document-print-area,
-  #document-print-area * {
+  #document-print-area-print,
+  #document-print-area-print * {
     visibility: visible !important;
   }
 
-  #document-print-area {
+  #document-print-area-print {
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
     position: fixed !important;
